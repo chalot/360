@@ -80,8 +80,59 @@
 /* local header files */
 #include "App.h"
 
+#define A8_MCU_COMM_UART  	///+ gzd, 20150520 核心板与底板通信串口
+
+#ifdef A8_MCU_COMM_UART
+#include <termios.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <errno.h>
+#include <pthread.h>
+
+typedef enum _eMSG_TYPE {
+	MSG_FRONT = 0,		/*方向前*/
+	MSG_FRONT_FULLVIEW,	/*方向前-全屏*/
+	MSG_LEFT,			/*方向左*/
+	MSG_LEFT_FULLVIEW,	/*方向左-全屏*/
+	MSG_RIGHT,   		/*方向右*/
+	MSG_RIGHT_FULLVIEW,	/*方向右-全屏*/
+	MSG_REAR,			/*倒车*/
+	MSG_ALLVIEW,		/*四路视频同时显示*/
+	MSG_SNAPSHOT,	/*标定-摄像头拍照*/
+	MSG_CALIBRATING,	/*标定-读取标定参数送给DSP*/
+	MSG_SLEEP			/*休眠*/
+} eMSG_TYPE;
+
+
+#define DEVICE "/dev/ttyS1"  ///核心板与底板通信串口，UART1
+
+static void CaritBoardKeyProc(void);
+static int TakeCalibrating(void);
+static int COMM_CreateTask(void);
+static int TakeSnapshot(void);
+
+
+#endif ///#ifdef A8_MCU_COMM_UART
+
+//#define CARIT_KEY			///使用开发板按键
+
 //disable, gzd
 #define GFX_CUBE//liuxu, 8/28/2013, enable GFX demo, which should be enabled exclusively with MP4 encoder.
+
+//#include <sys/ioctl.h>
+////#include <fcntl.h>//liuxu, 12/19/2013, move to outside.
+//#include <sys/mman.h>
+//#include <unistd.h>
+//#include <getopt.h>
+//#include <signal.h>
+//#include <sys/time.h>
+//#include <bc_cat.h>
+//#include "common.h"
 
 #ifdef GFX_CUBE
 #include <sys/ioctl.h>
@@ -101,9 +152,6 @@
 #define NO_MEMCPY//liuxu, 10/10/2013.
 
 #ifdef NO_MEMCPY
-
-///+ gzd, 20150520 核心板与底板通信串口
-#define A8_MCU_COMM_UART
 
 #if 0//liuxu, 10/12/2013, option 1, 4 frames are combined to one big texture buffer.
 #define FRAME_WIDTH     736*2
@@ -640,6 +688,8 @@ void mpeg4_encoding_task(void)
 #endif
 
 #define SAVE_PERSMAT_TO_FS//liuxu, 04/24/2014.
+
+#ifdef LEGACY_MAIN   ///原来的main
 
 Int Main_main(Void)
 {
@@ -1854,6 +1904,8 @@ err_ret:
 #endif
 
 }
+#endif ///LEGACY_MAIN
+
 
 #if 0//liuxu, 10/17/2013, quicktest is just a test for 3D cube of color bar.
 Int quicktest_Main_main(Void)
@@ -2138,87 +2190,896 @@ leave:
     return(status);
 }
 
+
+/***************************************************************************************************************
+ * DSP主程序
+ **************************************************************************************************************/
+Int Main_main(Void)
+{
+    UInt16      remoteProcId;
+    Int         status = 0;
+    Int         printremoteProcId = 0xff;
+
+    MessageQ_Msg pTempCmdMsg = NULL;//liuxu, 8/20/2013.
+    UInt16 nSRId = 0u;
+    SharedRegion_SRPtr srPtr = {0u};
+    cfg8Pointers_t *pFrom_DSP_TempCmdMsg = NULL;
+
+    unsigned char *vitrualY;
+    unsigned char *vitrualUV;
+
+    unsigned char *vitrualY1;//liuxu, 10/5/2013.
+    unsigned char *vitrualY2;
+    unsigned char *vitrualY3;
+
+    unsigned char *vitrualUV1;
+    unsigned char *vitrualUV2;
+    unsigned char *vitrualUV3;
+
+    int time1_profile, time2_profile, time3_profile, time4_profile, time5_profile, time6_profile,
+    time7_profile, time8_profile, time9_profile;//liuxu, 10/12/2013.
+
+    printf("--> Main_main:\n");
+
+#if 0 ///- GZD
+#ifdef SAVE_PERSMAT_TO_FS
+#endif
+#endif
+
+    remoteProcId = MultiProc_getId("DSP");
+
+    /* attach to the remote processor */
+    printremoteProcId = MultiProc_getId("HOST");
+
+    Osal_printf("\nliuxu, remoteProcId=%d, host-printremoteProcId=0x%x\n", remoteProcId, printremoteProcId);
+
+    void *ipc_vector = (0x85c00400);//liuxu, 07/01/2014, this is the address of ipc header.
+
+    #if 1
+    status = Ipc_control(remoteProcId, Ipc_CONTROLCMD_LOADCALLBACK, &ipc_vector);//liuxu, 07/01/2014, support late attach.
+    #else
+    status = Ipc_control(remoteProcId, Ipc_CONTROLCMD_LOADCALLBACK, NULL);
+    #endif
+
+    if (status < 0) {
+        printf("Main_main: load callback failed, remoteProcId=%d\n", remoteProcId);
+        goto leave;
+    }
+
+    /* invoke the SysLink start callback */
+    status = Ipc_control(remoteProcId, Ipc_CONTROLCMD_STARTCALLBACK, NULL);
+    if (status < 0) {
+        printf("Main_main: start callback failed\n");
+        goto leave;
+    }
+
+    /* BEGIN application phase */
+    printf("--> liuxu App_create:\n");//liuxu, 8/9/2013.
+
+    do
+    {
+		/* Open the heap created by the other processor. Loop until opened. */
+		do
+		{
+			status = HeapBufMP_open(MSGQ_HEAP_NAME, &hHeap);
+			/*
+			 *  Sleep for 1 clock tick to avoid inundating remote processor
+			 *  with interrupts if open failed
+			 */
+			if (status < 0)
+			{
+				sleep(1);//liuxu, 8/20/2013, sleep of linux.
+			}
+		} while (status < 0);
+
+		/* Register this heap with MessageQ */
+		MessageQ_registerHeap((IHeap_Handle) hHeap, MSGQ_HEAPID);
+
+    } while(0);
+
+    hMessageQ = MessageQ_create((String) "A8_CMD_Q_TO_DSP_LITE", NULL);
+    cmdMsg = (cfg4Pointers_t *)MessageQ_alloc(MSGQ_HEAPID, ROUNDUP_SIZE(sizeof(cfg4Pointers_t), 128));//liuxuliuxu, don't forget to free at the end.
+
+    do
+    {
+        status = MessageQ_open("DSP_CMD_Q_TO_A8", &RemoteDspQId);
+    }while(status != 0);
+
+#if 0 ///- gzd
+	//以下代码保存摄像头图片
+ #endif
+
+#ifdef MPEG4_ENCODER
+	//视频编码和存储
+#endif
+
+    //printf("\nliuxu, start, timestamp=%d!!!!\n", IviGetTime());//liuxuliuxu.
+#ifdef GFX_CUBE
+        int bcfd = -1;
+        char bcdev_name[] = "/dev/bccatX";
+        BCIO_package ioctl_var;
+        bc_buf_params_t buf_param;
+        bc_buf_ptr_t buf_pa;
+
+        unsigned long buf_paddr[MAX_BUFFERS];
+        char *buf_vaddr[MAX_BUFFERS] = { MAP_FAILED };
+        char *frame = NULL;
+
+        char *frameUV = NULL;
+
+        int buf_size = 0;
+        int c, idx, ret = -1;
+        char opts[] = "pw:t:b:h";
+
+        int   ii;
+        int   frame_w, frame_h;
+        int   min_w = 0, min_h = 0;;
+        int   cp_offset = 0;
+
+        struct timeval tvp, tv, tv0 = {0,0};
+        unsigned long tdiff = 0;
+        unsigned long fcount = 0;
+
+        if (frame_init(&buf_param))
+            return -1;
+
+        bcdev_name[strlen(bcdev_name)-1] = '0' + bcdev_id;
+
+        if ((bcfd = open(bcdev_name, O_RDWR|O_NDELAY)) == -1) {
+            printf("ERROR: open %s failed\n", bcdev_name);
+            goto err_ret;
+        }
+
+        frame_w = buf_param.width;
+        frame_h = buf_param.height;
+
+        if (min_w > 0 && !(min_w % 8))
+            buf_param.width = min_w;
+
+        if (min_h > 0)
+            buf_param.height = min_h;
+
+printf("\n-->liuxu, 06/19/2014, frame_w=%d, frame_h=%d, min_w=%d, min_h=%d", frame_w, frame_h, min_w, min_h);
+
+        int check = 0;
+
+#ifndef NO_MEMCPY
+        if ((check = ioctl(bcfd, BCIOREQ_BUFFERS, &buf_param)) != 0) {
+            printf("ERROR: BCIOREQ_BUFFERS failed, check=%d\n", check);
+            goto err_ret;
+        }
+
+        if (ioctl(bcfd, BCIOGET_BUFFERCOUNT, &ioctl_var) != 0) {
+            goto err_ret;
+        }
+
+
+        if (ioctl_var.output == 0) {
+            printf("ERROR: no texture buffer available\n");
+            goto err_ret;
+        }
+#else
+        if ((check = ioctl(bcfd, BCIOREQ_BUFFERS, &buf_param)) != 0) {
+            printf("ERROR: BCIOREQ_BUFFERS failed, check=%d\n", check);
+            goto err_ret;
+        }
+
+        bc_buf_ptr_t buf_pa_init;
+
+/*liuxu, 10/18/2013, channel 0*/
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_0;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 0;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_1;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 1;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_4;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 4;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_5;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 5;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+/*liuxu, 10/18/2013, channel 1*/
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_0+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 0+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_1+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 1+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_2+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 2+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_3+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 3+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_4+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 4+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_5+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 5+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+/*liuxu, 10/18/2013, channel 2*/
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_0+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 0+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_1+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 1+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_2+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 2+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_3+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 3+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_4+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 4+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_5+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 5+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+/*liuxu, 10/18/2013, channel 3*/
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_0+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 0+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_1+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 1+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_2+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 2+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_3+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 3+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_4+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 4+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_5+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 5+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        #ifdef TI_DSP_PROCESSING
+        buf_pa_init.pa = 0x8ff00000;//liuxu, 02/12/2014, add one/idx24 for outputbuf of ti dsp processing, hard coding.
+        buf_pa_init.index = 24;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+        #endif
+
+#endif //NO_MEMCPY
+
+        if (initEGL(ioctl_var.output)) {
+            printf("ERROR: init EGL failed\n");
+            goto err_ret;
+        }
+
+        if ((ret = initTexExt(bcdev_id, &buf_info)) < 0) {
+            printf("ERROR: initTexExt() failed [%d]\n", ret);
+            goto err_ret;
+        }
+
+        if (buf_info.n > MAX_BUFFERS) {
+            printf("ERROR: number of texture buffer exceeds the limit\n");
+            goto err_ret;
+        }
+
+printf("\n--> liuxu buf number 10/12/2013, buf_info.n=%d\n", buf_info.n);
+
+        /*FIXME calc stride instead of 2*/
+        buf_size = buf_info.w * buf_info.h * 1.5;//liuxu, 9/7/2013. ?????
+        min_w    = buf_info.w < frame_w ? buf_info.w : frame_w;
+        min_h    = buf_info.h < frame_h ? buf_info.h : frame_h;
+
+        if (buf_info.h > frame_h)
+            cp_offset = (buf_info.h - frame_h) * buf_info.w;
+
+        if (buf_info.w > frame_w)
+            cp_offset += buf_info.w - frame_w;
+
+printf("\n\n\n--> liuxu checkpoint, cp_offset=%d 10/12/2013\n\n\n", cp_offset);
+
+
+        if (buf_param.type == BC_MEMORY_USERPTR) {
+            ;//liuxu, 10/10/2013, space holder.
+        }
+        else if (buf_param.type == BC_MEMORY_MMAP) {
+            for (idx = 0; idx < buf_info.n; idx++) {
+                ioctl_var.input = idx;
+
+                if (ioctl(bcfd, BCIOGET_BUFFERPHYADDR, &ioctl_var) != 0) {
+                    printf("ERROR: BCIOGET_BUFFERADDR failed\n");
+                    goto err_ret;
+                }
+
+
+                buf_paddr[idx] = ioctl_var.output;
+                buf_vaddr[idx] = (char *)mmap(NULL, buf_size,
+                                  PROT_READ | PROT_WRITE, MAP_SHARED,
+                                  bcfd, buf_paddr[idx]);
+
+                if (buf_vaddr[idx] == MAP_FAILED) {
+                    printf("ERROR: mmap failed\n");
+                    goto err_ret;
+                }
+
+            }
+        }
+
+        ret = 0;
+        idx = 0;
+#endif ///#ifdef GFX_CUBE
+
+#ifndef CARIT_KEY  ///串口通信消息处理
+    printf("gzd, create UART comm thread ...");
+	ret = COMM_CreateTask();
+	if(ret < 0) {
+		printf("\n\n gzd, ERROR! Create UART comm task failed. \n");
+	}
+	else {
+		printf("\n\n gzd, OK to Create UART comm task. \n");
+	}
+#endif
+
+/*
+ * 以下部分进入主循环，从消息队列提取按键消息并处理，包括画面切换显示、各通道抓取图片、校正和保存参数
+ */
+    int i_put = 0;
+    int i_get = 0;
+
+    do
+    {
+        time1_profile = IviGetTime();
+
+        //printf("\nliuxu, before commandQGet");
+
+        ///从消息队列提取消息
+        status = commandQGet(hMessageQ, &(pTempCmdMsg), (UInt32)MessageQ_FOREVER);
+
+#if 0
+///以下部分保存校正参数
+#ifdef SAVE_PERSMAT_TO_FS  ///+，gzd， 保存校正参数到SD卡
+#endif ///SAVE_PERSMAT_TO_FS
+#endif
+
+        //printf("\nliuxu, after commandQGet");
+
+        if (status < 0)
+        {
+            printf("\nliuxu, commandQGet error, status=0x%x\n", status);//liuxuliuxu.
+            while(1);
+        }
+
+        time5_profile = IviGetTime() - time1_profile;
+        //printf("\nliuxu, input IPC get per frame = %d ms!!", time5_profile);
+
+        time8_profile = IviGetTime();
+
+///从消息字段中提取共享存储区
+        /* Get the id of the address if id is not already known. */
+        nSRId = SharedRegion_getId(pTempCmdMsg);
+        /* Get the shared region pointer for the address */
+        srPtr = SharedRegion_getSRPtr(pTempCmdMsg, nSRId);
+        /* Get the address back from the shared region pointer */
+        pFrom_DSP_TempCmdMsg = SharedRegion_getPtr(srPtr);
+
+        while(pFrom_DSP_TempCmdMsg->cmdType != 0x777)
+        {
+            printf("\nliuxu, pFrom_DSP_TempCmdMsg->cmdType != 0x777\n");
+        }
+
+        i_get++;
+
+        time9_profile = IviGetTime() - time8_profile;
+        //printf("\nliuxu, share region parser for ipc per frame = %d ms, iget=%d!!", time9_profile, i_get);
+
+        //k++;
+        //printf("\nliuxu, k=%d, pointerY=0x%x, pointerUV=0x%x\n", k, pFrom_DSP_TempCmdMsg->pPointer0, pFrom_DSP_TempCmdMsg->pPointer1);
+
+
+#ifdef GFX_CUBE
+        //frame = frame_get(&buf_pa);
+
+#ifndef NO_MEMCPY
+        ProcMgr_Handle               handle = NULL;
+
+    	status = ProcMgr_open (&handle, 0);
+
+    	//printf("\nliuxu, ProcMgr_open successful, handle=0x%x\n", handle);//liuxuliuxu.
+
+
+    	if (status < 0)
+        {
+            printf("\nliuxu, ProcMgr_open error, status=0x%x\n", status);//liuxuliuxu.
+            while(1);
+        }
+
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualY,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer0,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer0,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        ProcMgr_translateAddr (handle,
+                       &vitrualY1,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer1,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV1,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer1,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        ProcMgr_translateAddr (handle,
+                       &vitrualY2,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer2,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV2,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer2,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        ProcMgr_translateAddr (handle,
+                       &vitrualY3,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer3,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV3,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer3,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        frame = vitrualY3;//liuxu, 10/5/2013, either 0,1,2,3 can be used here or you can use them together in your app!!!!!!!!
+        frameUV = vitrualUV3;
+#else
+
+        if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_0)
+            idx = 0;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_1)
+            idx = 1;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_2)
+            idx = 2;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_3)
+            idx = 3;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_4)
+            idx = 4;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_5)
+            idx = 5;
+        else
+            idx = 0;;//liuxu, 06/19/2014, here is a RISK...//liuxu, 06/05/2014, test for PAL cam..//printf("\n\nliuxu, error!!!!\n\n");
+
+#endif ///GFX_CUBE
+
+#ifndef NO_MEMCPY
+        time3_profile = IviGetTime();
+
+        if (frame == (char *) -1)
+            break;
+
+        if (frame) {
+            if (buf_param.type == BC_MEMORY_MMAP) {
+                for (ii = 0; ii < min_h; ii++)
+                      /*FIXME calc stride instead of 2*/
+                    memcpy(buf_vaddr[idx] + buf_info.w * ii + cp_offset,
+                           frame + 736 * ii, min_w);//liuxu, 9/7/2013.
+
+                for (ii = 0; ii < min_h/2; ii++)
+                    memcpy(buf_info.w * buf_info.h + buf_vaddr[idx] + buf_info.w * ii + cp_offset,
+                           frameUV + 736 * ii, min_w);//liuxu, 9/7/2013, for UV of NV12.
+
+            }
+            else    /*buf_param.type == BC_MEMORY_USERPTR*/
+                idx = buf_pa.index;
+        }
+
+        time4_profile = IviGetTime() - time3_profile;
+        printf("\nliuxu, memory copy time per frame = %d ms!!", time4_profile);
+#else
+        if (buf_param.type == BC_MEMORY_USERPTR)
+        {
+            //printf("\nliuxu, 10/10/2013, good, idx=%d!!!\n", idx);
+        }
+
+///响应按键消息，切换显示画面
+      	//printf("\nliuxu, after drawCube, ch=%d, pressing=%d, released=%d", ch, pressing, released);
+#endif
+
+        time3_profile = IviGetTime();
+
+ #ifdef TI_DSP_PROCESSING
+
+        if(idx == 24)
+            drawCube(24, 24);//liuxu, 02/12/2014//liuxu, 06/02/2014, add 2nd parameter for side view.
+        else
+            drawCube(24, idx+channelNo*InterChannelIndexOffset);//liuxu, 02/12/2014//liuxu, 06/02/2014, add 2nd parameter for side view.
+
+ #else
+///- gzd 20150515        drawCube(idx+channelNo*InterChannelIndexOffset, 0);//liuxu, 06/19/2014, snd para is useless when disabled "DIRECT_SHOW" and "SIDE_VIEW"
+ #endif
+        time4_profile = IviGetTime() - time3_profile;
+       // printf("\nliuxu, drawCube time per frame = %d ms!!", time4_profile);
+
+#ifndef NO_MEMCPY
+        idx = (idx + 1) % buf_info.n;
+#endif
+
+#endif
+
+#ifdef CARIT_KEY
+        ///使用中通福瑞按键
+        CaritBoardKeyProc();
+#endif
+
+        i_put++;
+
+        time7_profile = IviGetTime() - time6_profile;
+        //printf("\nliuxu, output IPC put per frame = %d ms, iput=%d!!", time7_profile, i_put);
+        time2_profile = IviGetTime() - time1_profile;
+        //liuxu, 06/16/2014, printf("\nliuxu, total time per frame = %d ms!!\n\n\n", time2_profile);
+
+        //usleep(20000);//liuxu, 12/23/2013, usleep 20ms to yield to mpeg4 encoder thread.
+    }while(1);
+
+leave:
+    printf("<-- Main_main leave:\n");//liuxu, 8/19/2013.
+
+#ifdef MPEG4_ENCODER
+     pthread_join (thread_id, NULL);//liuxu, 12/19/2013.
+#endif
+
+    status = (status >= 0 ? 0 : status);
+    return (status);
+
+#ifdef GFX_CUBE
+err_ret:
+        if (buf_param.type == BC_MEMORY_MMAP) {
+            for (idx = 0; idx < buf_info.n; idx++) {
+                if (buf_vaddr[idx] != MAP_FAILED)
+                    munmap(buf_vaddr[idx], buf_size);
+            }
+        }
+        if (bcfd > -1)
+            close(bcfd);
+
+        deInitEGL(buf_info.n);
+        frame_cleanup();
+
+//        close(fd_gpio);
+
+        printf("liuxu, CUBE done\n");
+        return ret;
+#endif
+
+}
+
+/**
+ * 中通福瑞开发板按键消息处理，继承原来的处理方式
+ */
+void CaritBoardKeyProc(void)
+{
+	static int fd_gpio;
+	static char ch;
+	static int pressing, released;
+	static int channelNo = 0;
+	static int long_press_counter = 0;
+	static int long_pressed_trigger = 0;
+
+	static int ChInfoToDSP = 0;
+
+// + a0220402, add support carit board key
+#ifdef CONFIG_CARIT
+	fd_gpio = open("/sys/class/gpio/gpio4/value", O_RDONLY | O_NONBLOCK );
+#else
+	fd_gpio = open("/sys/class/gpio/gpio39/value", O_RDONLY | O_NONBLOCK );//liuxu, 10/18/2013, for detecting sw9 of J5eco EVM.
+#endif
+// - a0220402,
+	if (fd_gpio < 0) {
+		perror("\nliuxu, gpio/fd_open\n");
+	}
+
+	printf("\n\n\nliuxu, 10/18/2013, fd_gpio=%d\n\n\n", fd_gpio);
+
+	lseek(fd_gpio, 0, SEEK_SET);
+	read(fd_gpio, &ch, 1);
+
+
+///响应按键消息，切换显示画面
+	if (ch == '0')  ///按键状态：触发
+	{
+		pressing = 1;
+		long_press_counter++;
+		long_pressed_trigger = 0;
+	}
+	else if (pressing == 1) ///按键状态：按下
+	{
+		 released = 1;
+		 if(long_press_counter > 30*5)//liuxu, 06/03/2014, 5s for long press.  检测长按
+		 {
+			long_press_counter = 0;
+			long_pressed_trigger = 1;
+		 }
+	}
+	else ///按键状态：释放
+	{
+		pressing = 0;
+		released = 0;
+		long_press_counter = 0;
+		long_pressed_trigger = 0;
+	}
+
+	//printf("\nliuxu, 6/3/2014, ch=%c, pressing=%d, released=%d!!!\n", ch, pressing, released);
+	if(long_pressed_trigger == 1) //长按，存储拼接校正参数
+	{
+		pressing = 0;
+		released = 0;
+		long_press_counter = 0;
+		long_pressed_trigger = 0;
+		int ret = 0;
+
+		///读取DSP_Persmat.dat，内存映射到DSP
+		printf("\nliuxu, 06/03/2014, long pressed triggered\n");
+		printf("\n Detected a long press, start COLABRATING ...");
+
+		ret = TakeCalibrating();
+		if(ret < 0)
+			printf("\n :( Colabring failed! ret = %d", ret);
+		else
+			printf("\n :) Colabrated OK! ");
+	}
+	else if((pressing == 1) && (released == 1))//liuxu, 10/18/2013, bug to improve, when rapidly press and release, the behavior may depends by chance.
+	{
+		printf("\n\nliuxu, 10/18/2013, a normal key detected!!!\n\n");
+		pressing = 0;
+		released = 0;
+
+		channelNo++;
+		channelNo = channelNo%4; ///循环计数通道，总共四路摄像头
+
+		ChInfoToDSP++;
+		ChInfoToDSP = ChInfoToDSP % 8;///+ gzd,20150515 根据显示效果，取消立方体显示
+
+		printf("\n\n >>> channelNo = %d, ChInfoToDSP = %d\n",channelNo, ChInfoToDSP);
+
+		if(ChInfoToDSP == 5)
+		{
+//    	        system("echo 1,0/0/0/0 > /sys/devices/platform/vpss/display2/order");//liuxu, 06/20/2014, grx0 up.
+		}
+		else if (ChInfoToDSP == 6)
+		{
+			///gzd 取消立方体显示
+			///- gzd system("echo 1,3/0/0/0 > /sys/devices/platform/vpss/display2/order");//liuxu, 06/20/2014, video up.
+		}
+
+		///???以下函数作用不清楚
+		//liuxu, 02/19/2014, add key pad function.
+		if(channelNo == 1)
+		{
+			//system("echo 1,3/0/0/0 > /sys/devices/platform/vpss/display2/order");//liuxu, 06/03/2014, video pipeline on the top.
+			//system("echo 0 > /sys/devices/platform/vpss/graphics0/enabled");
+			//liuxu, 06/03/2014, no grx2 now. system("echo 0 > /sys/devices/platform/vpss/graphics2/enabled");
+		}
+		else if (channelNo == 2)
+		{
+			//system("echo 1,0/0/0/0 > /sys/devices/platform/vpss/display2/order");//liuxu, 06/03/2014, grx0 pipeline on the top.
+			//system("echo 1 > /sys/devices/platform/vpss/graphics0/enabled");
+		}
+		else if (channelNo == 3)
+		{
+			//system("echo 1 > /sys/devices/platform/vpss/graphics2/enabled");
+		}
+
+//      将按键消息通过Queue传给DSP，ChInfoToDSP是按键消息
+		cmdMsg->cmdType = (0x666 << 16 ) | ChInfoToDSP;//liuxu, 06/19/2014, pass info to DSP then M3 through DSP.//liuxu, 8/20/2013, ACK only.
+
+		int status = commandQPut(RemoteDspQId, (MessageQ_Msg )cmdMsg);
+		if (status < 0)
+			printf("\n gzd, ERR to send msg to DSP, status=0x%x\n", status);
+		else
+			printf("\ngzd, OK to send a new msg to DSP, cmd = %d", ChInfoToDSP);
+
+	}
+
+}
+
 /*
  * 核心板A8主控程序与底板MCU之间的通信串口程序
  */
 #ifdef A8_MCU_COMM_UART
 
-static int uart_fd = 0;
 static pthread_t thread_id;
 
 
-#include <comm.h>
-#include <termios.h>//终端控制定义
-
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h> //文件控制定义
-#include <termios.h>//终端控制定义
-#include <errno.h>
-
-typedef enum {
-	MSG_FRONT = 0,		/*方向前*/
-	MSG_FRONT_FULLVIEW,	/*方向前-全屏*/
-	MSG_LEFT,			/*方向左*/
-	MSG_LEFT_FULLVIEW,	/*方向左-全屏*/
-	MSG_RIGHT,   		/*方向右*/
-	MSG_RIGHT_FULLVIEW,	/*方向右-全屏*/
-	MSG_REAR,			/*倒车*/
-	MSG_ALLVIEW,		/*四路视频同时显示*/
-	MSG_SNAPSHOT,	/*标定-摄像头拍照*/
-	MSG_CALIBRATING,	/*标定-读取标定参数送给DSP*/
-	MSG_SLEEP,			/*休眠*/
-} eMSG_TYPE;
-
-#define DEVICE "/dev/ttyS1"
-
-#define BUF_SIZE	100
-
-#ifndef u8
-typedef unsigned char u8
-#endif
+//#ifndef UInt8
+//typedef unsigned char UInt8
+//#endif
 
 #define  CMD_HEAD	0x55	/*控制命令，MCU->A8*/
 #define  ACK_HEAD	0xAA	/*应答命令，A8->MCU*/
 
 /*命令执行结果*/
-typedef enum {
-	RET_OK = 1,  	/*成功*/
-	RET_FAIL = 0, 	/*失败*/
-	RET_TOUT, 		/*超时*/
-} eRET;
+//typedef enum {
+//	RET_OK = 1,  	/*成功*/
+//	RET_FAIL = -1, 	/*失败*/
+//	RET_TOUT = 0, 		/*超时*/
+//} eRET;
 
 /*控制命令数据格式*/
-typedef struct {
-	u8 head;		/*消息头，0x55*/
-	u8 cmd;			/*命令类型*/
-	u8 param[4];	/*命令参数*/
-	u8 checksum;	/*校验和*/
+typedef struct _tMSG_CMD {
+	UInt8 head;		/*消息头，0x55*/
+	UInt8 cmd;			/*命令类型*/
+	UInt8 param[4];	/*命令参数*/
+	UInt8 checksum;	/*校验和*/
 } tMSG_CMD;
 
 /*应答命令数据格式*/
-typedef struct {
-	u8 head;		/*消息头，0xAA*/
-	u8 cmd;			/*命令类型*/
-	u8 ret;			/*命令执行结果*/
-	u8 checksum;	/*校验和*/
+typedef struct _tMSG_ACK {
+	UInt8 head;		/*消息头，0xAA*/
+	UInt8 cmd;			/*命令类型*/
+	UInt8 ret;			/*命令执行结果*/
+	UInt8 checksum;	/*校验和*/
 } tMSG_ACK;
 
+
+#define BUF_SIZE	100
+
 ///循环数组
-typedef struct {
-	u8 buf[BUF_SIZE];	///数组缓区
-	u8 read;			///读位置
-	u8 write;			///写位置
+typedef struct  _tRINGBUF {
+	UInt8 buf[BUF_SIZE];	///数组缓区
+	UInt8 read;			///读位置
+	UInt8 write;			///写位置
 
 } tRINGBUF;
 
 static tRINGBUF	tRBuf;
 static int serial_fd = 0;
 
+static void COMM_Proc(void);
+static int UART_Init(void);
+static int UART_Send(int fd, UInt8 *data, int datalen);
+static int UART_Recv(int fd, UInt8 *data, int datalen);
+static void attach2Tail(UInt8 *buf, UInt8 len, tRINGBUF *ptRBuf);
+static UInt8 CalChecksum(UInt8 *data, UInt8 u8Len);
+static int COMM_TakeFrame(tRINGBUF *ptRBuf, tMSG_CMD *ptCmd);
+static void COMM_Proc(void);
 
 /**
  * 打开串口并初始化设置
@@ -2264,7 +3125,7 @@ int UART_Init(void)
  * @param datalen	数据长度
  * @return 0=成功，-1=失败
  */
-int UART_Send(int fd, char *data, int datalen)
+int UART_Send(int fd, UInt8 *data, int datalen)
 {
     int len = 0;
 
@@ -2286,7 +3147,7 @@ int UART_Send(int fd, char *data, int datalen)
  * @param datalen		接收数据长度
  * @return  返回实际长度，-1：错误
  */
-int UART_Recv(int fd, char *data, int datalen)
+int UART_Recv(int fd, UInt8 *data, int datalen)
 {
     int len=0, ret = 0;
     fd_set fs_read;
@@ -2318,9 +3179,9 @@ int UART_Recv(int fd, char *data, int datalen)
  * @param ptRBuf		接收缓区对象
  * @return
  */
-void attach2Tail(u8 *buf, u8 len, tRINGBUF *ptRBuf)
+void attach2Tail(UInt8 *buf, UInt8 len, tRINGBUF *ptRBuf)
 {
-	u8 i = 0;
+	UInt8 i = 0;
 
 	while((i < len) && (ptRBuf->read != ptRBuf->write))
 	{
@@ -2335,10 +3196,10 @@ void attach2Tail(u8 *buf, u8 len, tRINGBUF *ptRBuf)
 /*
  * 计算校验和，抑或
  */
-u8 CalChecksum(u8 *data, u8 u8Len)
+UInt8 CalChecksum(UInt8 *data, UInt8 u8Len)
 {
-	u8 i = 0;
-	u8 checksum = 0;
+	UInt8 i = 0;
+	UInt8 checksum = 0;
 
 	while(i < u8Len) {
 		checksum ^= data[i];
@@ -2353,10 +3214,10 @@ u8 CalChecksum(u8 *data, u8 u8Len)
  */
 int COMM_TakeFrame(tRINGBUF *ptRBuf, tMSG_CMD *ptCmd)
 {
-	u8 tmpCursor = 0;
-	u8 *paCmd = (u8 *)ptCmd;
-	u8 i = 0;
-	u8 checksum = 0;
+	UInt8 tmpCursor = 0;
+	UInt8 *paCmd = (UInt8 *)ptCmd;
+	UInt8 i = 0;
+	UInt8 checksum = 0;
 
 	///查找帧头
 	while(ptRBuf->read != ptRBuf->write) {
@@ -2403,7 +3264,7 @@ int COMM_TakeFrame(tRINGBUF *ptRBuf, tMSG_CMD *ptCmd)
 /**
  * 创建串口通信A8端监听线程
  */
-int COMM_CreateTask()
+int COMM_CreateTask(void)
 {
 	int err = 0;
 	int ret;
@@ -2440,9 +3301,10 @@ void COMM_Proc(void)
 {
 	int readBytes = 0;
 #define RECV_LEN 20
-	char rd_buf[RECV_LEN];
+	UInt8 rd_buf[RECV_LEN];
 	int ret;
 	tMSG_CMD tCmd;
+	int status;
 
 	while(1)
 	{
@@ -2452,7 +3314,7 @@ void COMM_Proc(void)
 			ret = COMM_TakeFrame(&tRBuf, &tCmd);
 			if(ret == 0) {
 				printf("\n[UART] Get Msg, cmd = %d, param[0..3] = %d, %d, %d, %d\n",
-						tCmd.cmd, tCmd.param[1], tCmd.param[2], tCmd.param[3]);
+						tCmd.cmd, tCmd.param[0], tCmd.param[1], tCmd.param[2], tCmd.param[3]);
 
 				switch(tCmd.cmd)
 				{
@@ -2486,7 +3348,7 @@ void COMM_Proc(void)
 					TakeSnapshot();
 					break;
 
-				case MSG_CALIBRATING: /*实际标定*/
+				case MSG_CALIBRATING: /*通知DSP开始标定*/
 
 					TakeCalibrating();
 					break;
@@ -2507,7 +3369,7 @@ void COMM_Proc(void)
  *
  * @return 0=成功，-1=失败
  */
-int TakeSnapshot()
+int TakeSnapshot(void)
 {
 	ProcMgr_Handle   handle = NULL;
 	unsigned char *hardFrameOutput0;
@@ -2521,6 +3383,8 @@ int TakeSnapshot()
 	FILE * dumpfile1;
 	FILE * dumpfile2;
 	FILE * dumpfile3;
+
+	int status;
 
 	status = ProcMgr_open (&handle, 0);
 	printf("\nliuxu, ProcMgr_open successful, handle=0x%x\n", handle);
@@ -2593,15 +3457,15 @@ int TakeSnapshot()
 		return -1;
 	}
 
-	time1_profile = IviGetTime();
+//	time1_profile = IviGetTime();
 
 	fwrite(hardFrameOutput0, 1, 736*480*1.5, dumpfile0);
 	fwrite(hardFrameOutput1, 1, 736*480*1.5, dumpfile1);
 	fwrite(hardFrameOutput2, 1, 736*480*1.5, dumpfile2);
 	fwrite(hardFrameOutput3, 1, 736*480*1.5, dumpfile3);
 
-	time2_profile = IviGetTime() - time1_profile;
-	printf("\nliuxu, time per dump 4 files = %d ms!!\n\n\n", time2_profile);
+//	time2_profile = IviGetTime() - time1_profile;
+//	printf("\nliuxu, time per dump 4 files = %d ms!!\n\n\n", time2_profile);
 	printf("\n\nliuxu, 222,02/20/2014, dump 4 files well.\n\n");
 
 	fclose(dumpfile0);
@@ -2619,7 +3483,7 @@ int TakeSnapshot()
  *
  * @return 0=成功，-1=失败
  */
-int TakeCalibrating()
+int TakeCalibrating(void)
 {
 #ifdef SAVE_PERSMAT_TO_FS
 
@@ -2663,6 +3527,10 @@ int TakeCalibrating()
 		printf("\nliuxu, 04/22/2014, i_readPersmatcount=%d bytes\n", i_readPersmatcount);
 		fclose(dumpfilePersmat_ForLoad);
 		close(memDevFd2);
+
+		///设置Persmat参数载入标志，通知DSP读取
+        *((unsigned int *)(coreObjVirtBaseAddr2 + 0x888)) = 0x88888888;
+//        i_saveFirstTime = 0;//liuxu, 06/03/2014, ready for fwrite/saving permat during next frame.
 	}
 
 	return 0;
