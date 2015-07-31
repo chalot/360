@@ -62,12 +62,13 @@
 #include "command_queue.h"
 #include <ti/ipc/SharedRegion.h>
 //volatile int gOneframedone;
-
+/*
 #include "title.h"
 #include "sep.h"
 #include "s1.h"
 #include "s2.h"
 #include "s3.h"
+*/
 
 //enabling this macro, DSP will send command to itself, so that algorithm read image datas from DDR, turning it on
 //when there is no real camera for customer to develop algorithm.
@@ -549,11 +550,13 @@ static void layoutChange(int layoutid, cfg4Pointers_t *pFrom_VPSS_M3_TempCmdMsg)
 	/*
 	 * test
 	 */
+/*
 	srcBuf[4] = title_yuv;//capture3_yuv;
 	srcBuf[5] = sep_yuv;
 	srcBuf[6] = step1_yuv;
 	srcBuf[7] = s2_yuv;
 	srcBuf[8] = s3_yuv;
+*/
 
 
 	if(curLayoutId == layoutid)
@@ -1067,6 +1070,12 @@ ERRORTYPE A8CommCreate(Void)
  *
  *  @returns    None
  ************************************************************************/
+ 
+static volatile cfg4Pointers_t *pFrom_VPSS_M3_TempCmdMsg = NULL_VALUE;
+static volatile cfg4Pointers_t *pDSP_To_VPSS_M3_TempCmdMsg = NULL_VALUE;
+static volatile cfg4Pointers_t *pFrom_A8_TempCmdMsg = NULL_VALUE;
+static volatile cfg8Pointers_t *pDSP_To_A8_TempCmdMsg = NULL_VALUE;//liuxuliuxu, 8/20/2013. //liuxu, 10/5/2013. 
+static volatile cfg8Pointers_t *pFrom_VPSS_M3_TempCmdMsg2 = NULL_VALUE;//liuxuliuxu, 8/8/2013, for DSP EDMA downscale and encoder.
 Void dspAppTask(UArg arg0, UArg arg1)
 {
     ERRORTYPE nRetVal = ecNone;
@@ -1087,12 +1096,14 @@ Void dspAppTask(UArg arg0, UArg arg1)
         uint16_t nSRId = 0u;
         SharedRegion_SRPtr srPtr = {0u};
         cfgCmds_t *p2TempCmdMsg = NULL_VALUE;
+#if 0
+//fix by gzd. 改成全局变量
         cfg4Pointers_t *pFrom_VPSS_M3_TempCmdMsg = NULL_VALUE;
         cfg4Pointers_t *pDSP_To_VPSS_M3_TempCmdMsg = NULL_VALUE;
         cfg4Pointers_t *pFrom_A8_TempCmdMsg = NULL_VALUE;
         cfg8Pointers_t *pDSP_To_A8_TempCmdMsg = NULL_VALUE;//liuxuliuxu, 8/20/2013. //liuxu, 10/5/2013. 
         cfg8Pointers_t *pFrom_VPSS_M3_TempCmdMsg2 = NULL_VALUE;//liuxuliuxu, 8/8/2013, for DSP EDMA downscale and encoder.
-
+#endif
         frame_t InFrame, OutFrame;
         frame_t* pInFrame;
         frame_t* pOutFrame;
@@ -1454,8 +1465,6 @@ Void dspAppTask(UArg arg0, UArg arg1)
                 		(void *)(srcBuf[8] + 736 * 2 * crop_startY[8] + crop_startX[8] * 2),
                 		(void *)(tpHandle.outputBuffer + win_startX[8] * 2 + 736 * 2 * win_startY[8] ),
                 		win_Width[8] * 2, win_Height[8], win_Width[8]*2, 736*2);//liuxu, 06/17/2014.
-
-
 
 
                 }
@@ -1936,6 +1945,8 @@ int main(void)
     return 0;
 }
 
+#define __UI__
+
 #ifdef __UI__
 /******************************************************************************************************************
  *
@@ -1944,14 +1955,13 @@ int main(void)
  *****************************************************************************************************************/
 	
 #define VIDEO_BUF_SYNTHESIS     (tpHandle.synthesisBuffer)
-#define VIDEO_BUF_LEFT          (pFrom_VPSS_M3_TempCmdMsg->pPoint1)
-#define VIDEO_BUF_RIGHT         (pFrom_VPSS_M3_TempCmdMsg->pPoint2)
-#define VIDEO_BUF_REAR          (pFrom_VPSS_M3_TempCmdMsg->pPoint3)
-#define VIDEO_BUF_FRONT          (pFrom_VPSS_M3_TempCmdMsg->pPoint0)
+#define VIDEO_BUF_LEFT          (pFrom_VPSS_M3_TempCmdMsg->pPointer1)
+#define VIDEO_BUF_RIGHT         (pFrom_VPSS_M3_TempCmdMsg->pPointer2)
+#define VIDEO_BUF_REAR          (pFrom_VPSS_M3_TempCmdMsg->pPointer3)
+#define VIDEO_BUF_FRONT          (pFrom_VPSS_M3_TempCmdMsg->pPointer0)
 #define VIDEO_BUF_CAR           (Carbox_80_240)
 #define VIDEO_BUF_TIPBAR        (OSD_400_224)
-		
-	
+	 
 #define u16 unsigned short
 #define u8 unsigned char
 #define u32 unsigned int
@@ -1968,422 +1978,6 @@ typedef struct {
 	int crop_startY;
 	
 } tREGION;
-
-
-#if 0
-typedef enum {
-	PAGE_FRONT = 0,
-	PAGE_FONT_FULL,
-	PAGE_LEFT,
-	PAGE_LEFT_FULL,
-	PAGE_RIGHT,
-	PAGE_RIGHT_FULL,
-	PAGE_REAR,
-	PAGE_REAR_FULL,
-	PAGE_AllVIEW,
-	PAGE_MENU,				//菜单
-	PAGE_MENU_SETPARAM, 	//设置参数
-	PAGE_MENU_UPG,			//升级
-	PAGE_MENU_COLABRAT, 	//标定
-
-	PAGE_END,
-} ePAGE_TYPE;
-
-/*
- * 显示区域
- */
-typedef struct {
-//	void* src;		//显示源，两种：视频源，图片数组
-	int win_startX;
-	int win_startY;
-	int win_Width;
-	int win_Height;
-	int crop_startX;
-	int crop_startY;
-//	u8	ret; //命令执行结果
-	
-} tREGION;
-
-/*
- * 子视图类型
- */
-typedef enum {
-	VIEW_SYSTHESIS = 0,
-	VIEW_CAR,
-	VIEW_SINGLEVIEW,
-	VIEW_TIPBAR,
-	VIEW_FULLSCREEN,
-	VIEW_SPLIT,
-	VIEW_MENU,
-	
-	VIEW_END,
-} eVIEW_TYPE;
-
-//项类型
-typedef 	enum
-{
-	ITEM_UNDEFINE = -1,
-	ITEM_TITLEBAR = 0,									//标题栏
-	ITEM_SEPRATOR,										//分割栏
-	ITEM_CONTENT,										//内容
-
-	ITEM_END,	
-}	eITEM_TYPE;
-
-typedef struct {
-	tREGION 	tRegion;
-	eVIEW_TYPE	eType;
-	void*		pSrc;		//显示源，两种：视频源，图片数组
-	u8			bVisable;
-} tVIEW;
-
-typedef struct {
-	tREGION 	tRegion;
-	void*		pSrc;		//显示源，两种：视频源，图片数组
-} tINDICATOR;
-
-typedef struct {
-	tREGION 	tRegion;
-	void*		pSrc;		//显示源，两种：视频源，图片数组
-} tRESULT;
-
-
-typedef struct {
-	tREGION 	tRegion;
-	eITEM_TYPE	eType;
-	void*		pSrc;		//显示源，两种：视频源，图片数组
-	u8			u8Ret;
-	u8			bFocus; 
-	tINDICATOR	tIndicator;
-	tRESULT 	tResult;
-	
-} tITEM;
-
-
-
-#define	MAX_VIEW_AMT	4	//每页包含最大view的数目
-#define	MAX_ITEM_AMT	6	//每页包含最大item的数目
-
-
-//页面,由项组成
-typedef 	struct
-{
-	tVIEW			tViews[MAX_VIEW_AMT];
-	tITEM			tItems[MAX_ITEM_AMT];						//项
-	u8				ePageType;									//页面类型
-	u8				u8ViewCnt;
-	u8				u8ItemCnt;									//项数
-	u8				u8FocusItem;								//焦点项
-	u8				u8ParentPageId; 							//父页面号
-}	tPAGE;
-
-
-//整个界面；由多个页面级联而成
-
-typedef 	struct
-{
-	u8				u8CurPage;							//当前活动页面号
-	tPAGE			aPage[PAGE_END];					//页面数组
-
-}	tPAGE_FLOW;
-	
-	
-#define PAGE_MAIN	PAGE_FRONT	//主界面为前视
-	
-#define RET_OK		1	//执行结果，成功
-#define RET_ERR		0	//执行结果，失败
-#define VISIABLE		1
-#define INVISIABLE	0
-	
-	 
-static tPAGE_FLOW			tPageFlow;					//页面控制流
-
-				
-#define	VIEW_REGION_SYNTHESIS	{0, 0, 320, 480, 24, 0} 
-#define	VIEW_REGION_CAR			{0, 0, 320, 480, 24, 0}
-#define	VIEW_REGION_SINGLEVIEW	{0, 0, 320, 480, 24, 0} 
-#define	VIEW_REGION_TIPBAR		{0, 0, 320, 480, 24, 0}
-#define VIEW_REGION_FULLSCREEN	{0, 0, 736, 480, 0,  0}
-	
-
-/*!
- * 设置view参数
- * \n
- *
- * @param bVisable		是否可见
- * @param crop_startX	
- * @param crop_startY
- * @param e
- * @param pView
- * @param src
- * @param win_Height
- * @param win_startX
- * @param win_startY
- * @param win_Width
- * \n
- * @see
- */
-void Set_Param_VIEW(tVIEW *pView, eVIEW_TYPE e, void *src, u8 bVisable, 
-	int win_startX, int win_startY,	int win_Width, int win_Height, 
-	int crop_startX, int crop_startY )	
-{
-	pView->bVisable = bVisable;
-	pView->pSrc = src;
-	pView->eType = e;
-	pView->tRegion.win_startX = win_startX;
-	pView->tRegion.win_startY = win_startY;
-	pView->tRegion.win_Width = win_Width;
-	pView->tRegion.win_Height = win_Height;
-	pView->tRegion.crop_startX = crop_startX;
-	pView->tRegion.crop_startY = crop_startY;　
-}
-	
-//屏初始化
-void	Disp_Init(void)
-{
-
-	Init_Page();
-}
-
-/*!
- * 初始化页面
- * \n
- *
- * \n
- * @see
- */
-void	Init_Page(void)
-{
-	u8	i = 0;
-	u8	u8PageType = 0;
-	tPAGE	*pPage = NULL;
-
-	tPAGE *pPage;
-
-	
-	memset((u8*)&tPageFlow, 0, sizeof(tPageFlow));
-
-	//------PAGE_FRONT-----------
-
-
-	/*!
-	 * 设置PAGE_FRONT页面
-	 *
-	 */		
-	pPage = &tPageFlow.aPage[PAGE_FRONT];
-		
-	pPage->ePageType = PAGE_FRONT;
-	pPage->u8ParentPageId = PAGE_MAIN;
-	pPage->u8ViewCnt = 4;
-	pPage->u8ItemCnt = 0;
-
-	//synthesis view
-	Set_Param_VIEW(&pPage->tViews[0], VIEW_SYSTHESIS, VIDEO_BUF_SYNTHESIS,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	//car view
-
-	Set_Param_VIEW(&pPage->tViews[1], VIEW_CAR, VIDEO_BUF_CAR,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	//single view
-	Set_Param_VIEW(&pPage->tViews[2], VIEW_SINGLEVIEW, VIDEO_BUF_FRONT,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	//tipbar view
-	Set_Param_VIEW(&pPage->tViews[3], VIEW_TIPBAR, VIDEO_BUF_TIPBAR,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-
-	/*!
-	 * PAGE_FONT_FULL
-	 *
-	 */
-	pPage = &tPageFlow.aPage[PAGE_FONT_FULL];
-	
-	pPage->ePageType = PAGE_FONT_FULL;
-	pPage->u8ParentPageId = PAGE_MAIN;
-	pPage->u8ViewCnt = 1;
-	pPage->u8ItemCnt = 0;
-	
-	//fullscreen view
-	Set_Param_VIEW(&pPage->tViews[0], VIEW_FULLSCREEN, VIDEO_BUF_FRONT,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-		
-	/*!
-	 * 左视
-	 *
-	 */
-	pPage = &tPageFlow.aPage[PAGE_LEFT];
-	
-	pPage->ePageType = PAGE_LEFT;
-	pPage->u8ParentPageId = PAGE_MAIN;
-	pPage->u8ViewCnt = 4;
-	pPage->u8ItemCnt = 0;
-	
-	//synthesis view
-	Set_Param_VIEW(&pPage->tViews[0], VIEW_SYSTHESIS, VIDEO_BUF_SYNTHESIS,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	//car view
-	Set_Param_VIEW(&pPage->tViews[1], VIEW_CAR, VIDEO_BUF_CAR,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	//single view
-	Set_Param_VIEW(&pPage->tViews[2], VIEW_SINGLEVIEW, VIDEO_BUF_LEFT,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	//tipbar view
-	Set_Param_VIEW(&pPage->tViews[3], VIEW_TIPBAR, VIDEO_BUF_TIPBAR,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	
-	/*!
-	 * 左视-全图
-	 *
-	 */
-	pPage = &tPageFlow.aPage[PAGE_LEFT_FULL];
-	
-	pPage->ePageType = PAGE_LEFT_FULL;
-	pPage->u8ParentPageId = PAGE_MAIN;
-	pPage->u8ViewCnt = 1;
-	pPage->u8ItemCnt = 0;
-	
-	//fullscreen view
-	Set_Param_VIEW(&pPage->tViews[0], VIEW_FULLSCREEN, VIDEO_BUF_LEFT,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-
-	/*!
-	 * 右视
-	 *
-	 */
-	pPage = &tPageFlow.aPage[PAGE_RIGHT];
-	
-	pPage->ePageType = PAGE_RIGHT;
-	pPage->u8ParentPageId = PAGE_MAIN;
-	pPage->u8ViewCnt = 4;
-	pPage->u8ItemCnt = 0;
-	
-	//synthesis view
-	Set_Param_VIEW(&pPage->tViews[0], VIEW_SYSTHESIS, VIDEO_BUF_SYNTHESIS,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	//car view
-	Set_Param_VIEW(&pPage->tViews[1], VIEW_CAR, VIDEO_BUF_CAR,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	//single view
-	Set_Param_VIEW(&pPage->tViews[2], VIEW_SINGLEVIEW, VIDEO_BUF_RIGHT,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	//tipbar view
-	Set_Param_VIEW(&pPage->tViews[3], VIEW_TIPBAR, VIDEO_BUF_TIPBAR,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-
-
-	/*!
-	 * 右视-全图
-	 *
-	 */
-	pPage = &tPageFlow.aPage[PAGE_RIGHT_FULL];
-	
-	pPage->ePageType = PAGE_RIGHT_FULL;
-	pPage->u8ParentPageId = PAGE_MAIN;
-	pPage->u8ViewCnt = 1;
-	pPage->u8ItemCnt = 0;
-	
-	//fullscreen view
-	Set_Param_VIEW(&pPage->tViews[0], VIEW_FULLSCREEN, VIDEO_BUF_RIGHT,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-
-
-	/*!
-	 * 后视
-	 *
-	 */
-	pPage = &tPageFlow.aPage[PAGE_REAR];
-
-	pPage->ePageType = PAGE_REAR;
-	pPage->u8ParentPageId = PAGE_MAIN;
-	pPage->u8ViewCnt = 4;
-	pPage->u8ItemCnt = 0;
-
-	//synthesis view
-	Set_Param_VIEW(&pPage->tViews[0], VIEW_SYSTHESIS, VIDEO_BUF_SYNTHESIS,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	//car view
-	Set_Param_VIEW(&pPage->tViews[1], VIEW_CAR, VIDEO_BUF_CAR,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	//single view
-	Set_Param_VIEW(&pPage->tViews[2], VIEW_SINGLEVIEW, VIDEO_BUF_REAR,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-	//tipbar view
-	Set_Param_VIEW(&pPage->tViews[3], VIEW_TIPBAR, VIDEO_BUF_TIPBAR,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-
-	/*!
-	 * 后视-全图
-	 *
-	 */
-	pPage = &tPageFlow.aPage[PAGE_REAR_FULL];
-
-	pPage->ePageType = PAGE_REAR_FULL;
-	pPage->u8ParentPageId = PAGE_MAIN;
-	pPage->u8ViewCnt = 1;
-	pPage->u8ItemCnt = 0;
-
-	//fullscreen view
-	Set_Param_VIEW(&pPage->tViews[0], VIEW_FULLSCREEN, VIDEO_BUF_RIGHT,
-					VISIABLE, 0, 0, 320, 480, 24, 0);
-
-
-	/*!
-	 * 四路视频同时显示
-	 *
-	 */
-		pPage = &tPageFlow.aPage[PAGE_AllVIEW];
-		
-		pPage->ePageType = PAGE_AllVIEW;
-		pPage->u8ParentPageId = PAGE_MAIN;
-		pPage->u8ViewCnt = 4;
-		pPage->u8ItemCnt = 0;
-		
-		//FRONT view
-		Set_Param_VIEW(&pPage->tViews[0], VIEW_SPLIT, VIDEO_BUF_FRONT,
-						VISIABLE, 0, 0, 320, 480, 24, 0);
-		//LEFT view
-		Set_Param_VIEW(&pPage->tViews[1], VIEW_SPLIT, VIDEO_BUF_LEFT,
-						VISIABLE, 0, 0, 320, 480, 24, 0);
-		//RIGHT view
-		Set_Param_VIEW(&pPage->tViews[2], VIEW_SPLIT, VIDEO_BUF_RIGHT,
-						VISIABLE, 0, 0, 320, 480, 24, 0);
-		//REAR view
-		Set_Param_VIEW(&pPage->tViews[3], VIEW_SPLIT, VIDEO_BUF_REAR,
-						VISIABLE, 0, 0, 320, 480, 24, 0);
-		
-
-		/*!
-		 * 菜单界面
-		 *
-		 */
-		pPage = &tPageFlow.aPage[PAGE_MENU];
-		
-		pPage->ePageType = PAGE_MENU;
-		pPage->u8ParentPageId = PAGE_MAIN;
-		pPage->u8ViewCnt = 0;
-		pPage->u8ItemCnt = 3;
-		
-		//FRONT view
-		Set_Param_VIEW(&pPage->tViews[0], VIEW_SPLIT, VIDEO_BUF_FRONT,
-						VISIABLE, 0, 0, 320, 480, 24, 0);
-		//LEFT view
-		Set_Param_VIEW(&pPage->tViews[1], VIEW_SPLIT, VIDEO_BUF_LEFT,
-						VISIABLE, 0, 0, 320, 480, 24, 0);
-		//RIGHT view
-		Set_Param_VIEW(&pPage->tViews[2], VIEW_SPLIT, VIDEO_BUF_RIGHT,
-						VISIABLE, 0, 0, 320, 480, 24, 0);
-		//REAR view
-		Set_Param_VIEW(&pPage->tViews[3], VIEW_SPLIT, VIDEO_BUF_REAR,
-						VISIABLE, 0, 0, 320, 480, 24, 0);
-		
-
-
-
-
-
-}
-#endif
-
-
 
 
 /*按键类型*/
@@ -2422,6 +2016,24 @@ typedef enum {
 #define 	VISIABLE			1
 #define 	INVISIABLE			0
 
+/*!
+ * 视图类型
+ *
+ */
+typedef enum {
+	VIEW_FRONT = 0,
+	VIEW_FONT_FULL,
+	VIEW_LEFT,
+	VIEW_LEFT_FULL,
+	VIEW_RIGHT,
+	VIEW_RIGHT_FULL,
+	VIEW_REAR,
+	VIEW_REAR_FULL,
+	VIEW_AllVIEW,
+	VIEW_MENU
+
+} eVIEWTYPE;
+
 
 /*
  * 子视图类型
@@ -2432,44 +2044,28 @@ typedef enum {
 	VIEW_SINGLEVIEW,
 	VIEW_TIPBAR,
 	VIEW_FULLSCREEN,
-	VIEW_SPLIT,
+	VIEW_SPLIT_00,	//上左
+	VIEW_SPLIT_01,	//上右
+	VIEW_SPLIT_10,	//下左
+	VIEW_SPLIT_11,	//下右
 	
 	VIEW_END,
 } eVIEW_TYPE;
 
 
 typedef struct {
-	eVIEW_TYPE	eType;
+	eVIEWTYPE	eType;
 	void*		pSrc;		//显示源，两种：视频源，图片数组
 	u8			bVisable;
 } tVIEW;
 
 
-//界面包含的所有页面类型
-typedef enum {
-	PAGE_FRONT = 0,
-	PAGE_FONT_FULL,
-	PAGE_LEFT,
-	PAGE_LEFT_FULL,
-	PAGE_RIGHT,
-	PAGE_RIGHT_FULL,
-	PAGE_REAR,
-	PAGE_REAR_FULL,
-	PAGE_AllVIEW,
-	PAGE_MENU,				//菜单
-	PAGE_MENU_SETPARAM, 	//设置参数
-	PAGE_MENU_UPG,			//升级
-	PAGE_MENU_COLABRAT, 	//标定
 
-	PAGE_END,
-} ePAGE_TYPE;
-
+#define PAGE_DEFAULT 	PAGE_FRONT
 
 //界面包含的所有页面类型
 typedef		enum
 {
-	PAGE_DEFAULT = 0,		
-		
 	PAGE_FRONT = 0,
 	PAGE_FONT_FULL,
 	PAGE_LEFT,
@@ -2572,7 +2168,8 @@ typedef		struct
 //页面,由项、图标、按钮三种元素组成
 typedef		struct
 {
-	tVIEW*			pViews;										//视图			
+//	tVIEW*			pViews;										//视图			
+	eVIEWTYPE		eViewType;									//视图类型
 	tTITLEBAR*		pTitleBar;									//标题栏
 	tITEM*			pItems;										//项
 	tBUTTON*		pButtons;									//按钮
@@ -2600,14 +2197,14 @@ typedef		struct
 //OLED显示屏控制有限状态机
 typedef		struct
 {
-//	u16						u16CurrentState;					//当前状态
+//	u16					u16CurrentState;					//当前状态
 	
-	u8						u8PendingCommand;					//等待执行的按键命令
-	u8						u8CurrentPage;						//当前操作页面
-	BOOL					bPageFresh;							//是否刷新页面
+	u8					u8PendingCommand;					//等待执行的按键命令
+	u8					u8CurrentPage;						//当前操作页面
+	u8					bPageFresh;							//是否刷新页面
 
 
-} 	tDISP_OLED_FSM;
+} 	tUIFSM;
 	  
 //屏初始化
 void	Disp_OLED_Init(void);
@@ -2615,8 +2212,15 @@ void	Disp_OLED_Init(void);
 //显示页面
 void	Show_Page(u8 u8PageType);
 
-//显示单个项目
-void	Show_Item(cu8 u8Page, cu8 u8ItemIndex, u8 u8ShowType);
+//显示视图
+void 	Show_View(eVIEWTYPE eViewType);
+
+//显示标题栏
+void 	Show_Title(void *pSrc);
+
+
+//显示单个列表
+void	Show_Item(u8 u8Page, u8 u8ItemIndex, u8 u8ShowType);
 
 //显示图标
 void	Show_Icon(void);
@@ -2625,124 +2229,52 @@ void	Show_Icon(void);
 void	Show_Button(u8 u8Page, u8 u8ButtonIndex, u8 u8ShowType);
 
 //将屏显缓区内一块点位区域输出到屏幕中对应区域显示
-void	BitBlt(u8 u8LT_X, u8 u8LT_Y, u8 u8BR_X, u8 u8BR_Y, u8 *pBuf, u16 u16Len, u8 u8ShowType);
+void	BitBlt(tREGION *ptRegion, void *pSrc);
+void	BitBlt_Raw(int win_startX, int win_startY, int win_Width, int win_Height, int crop_startX, int crop_startY, void *pSrc);
 
-//清除某项显示，显示背景色
-void	Clear_Item(u8 u8ItemIndex);
-
-//将字符转换成字模点阵
-//BOOL	Convert_String_To_Lattice(u8 *pTxt, u8 u8Len/*, u8 *pLatticeBuf, u16 u16LatticeLen*/);
-
-//从当前字符开始，计算可被一项显示完的字节长度
-//u8	GetVisibleBytes(u8 *pBuf, u8 u8Len, bool bDirect, u8 u8Current, u8 u8VisibleSize);
 
 //初始化页面控制流
 void	Init_Page(void);
 
-//初始化屏状态机
-void	Init_OLED(void);
-
-//启动页面隐藏定时器
-//void	TurnOn_Page_Hide_Timer(u8 u8TimerId, u16 u16TimerOut);
-
-//关闭页面隐藏定时器
-//void	TurnOff_Page_Hide_Timer(u8 u8TimerId);
-
-//发送选中的固化短信
-//BOOL 	OLED_Send_SMS(u8 u8EmbedSMSIndex);
-	
 //界面处理
-void	OLED_Process(void);		
+void	UI_Process(void);
 
 //按键消息处理
-void	OLED_Key_Process(u8	u8KeyType);
+void	UI_Key_Process(eKEYTYPE eKeyType);
 
 //读配置信息
-BOOL	GetConfigInfo(void);	
+//u8	GetConfigInfo(void);
 
 //项无显示内容，填充背景色
-void	Clear_Item(u8 u8ItemIndex);
+//void	Clear_Item(u8 u8ItemIndex);
 
 //刷新默认页面
-void	Refresh_Page_Default(void);		 
+//void	Refresh_Page_Default(void);		 
 
 //屏反馈处理
-void	OLED_AsyncNotifySMSSendState(u8 u8Ret);
+//void	UI_AsyncNotifySMSSendState(u8 u8Ret);
 
 //屏应答处理
-void	OLED_AckProcess(u8 *pMsg, u8 u8MsgLen);
+//void	UI_AckProcess(u8 *pMsg, u8 u8MsgLen);
 
 //2009_05_31
-void	OLED_ShowDefaultPage(void);
+//void	UI_ShowDefaultPage(void);
 
 
-#define PAGE_MENU_SIZE	(PAGE_END - PAGE_MENU)	//配置页面总数
+//#define PAGE_MENU_SIZE	(PAGE_END - PAGE_MENU)	//配置页面总数
 
-static 	tVIEW		aView[PAGE_TYPE_END][VIEW_END];				//所有视图
+//static 	tVIEW		aView[PAGE_TYPE_END][VIEW_END];				//所有视图
 static	tITEM		aItem[PAGE_TYPE_END][4];					//所有项
 static	tICON		aIcon[ICON_TYPE_END];						//图标
 static	tBUTTON		aButton[2];									//按钮
 
-static	volatile tDISP_OLED_FSM				tDISP_OLED_FSM;	   	//屏状态机
-static	volatile tPAGE_CONTROL_FLOW			tPage_Flow;			//页面控制流
+static	volatile tUIFSM					tUIFsm;	   			//屏状态机
+static	volatile tPAGE_CONTROL_FLOW		tPage_Flow;			//页面控制流
 
 
 tPAGE		*pCurPage 		= NULL;							//当前页面指针
 tPAGE		*pNextPage 		= NULL;							//跳转页面指针
 tPAGE		*pParentPage 	= NULL;							//父页面指针
-
-static tVIEW  aView[][] = {
-//前视
-	{ VIEW_SYSTHESIS,	VIDEO_BUF_SYNTHESIS,	VISIABLE },
-	{ VIEW_CAR,			VIDEO_BUF_CAR,			VISIABLE },
-	{ VIEW_SINGLEVIEW,	VIDEO_BUF_FRONT,		VISIABLE },
-	{ VIEW_TIPBAR,		VIDEO_BUF_TIPBAR,		VISIABLE },
-//	PAGE_FRONT_FULL,
-	{ VIEW_SYSTHESIS,	VIDEO_BUF_SYNTHESIS,	INVISIABLE },
-	{ VIEW_CAR,			VIDEO_BUF_CAR,			INVISIABLE },
-	{ VIEW_FULLSCREEN,	VIDEO_BUF_FRONT,		VISIABLE },
-	{ VIEW_TIPBAR,		VIDEO_BUF_TIPBAR,		INVISIABLE },
-//	PAGE_LEFT,
-	{ VIEW_SYSTHESIS,	VIDEO_BUF_SYNTHESIS,	VISIABLE },
-	{ VIEW_CAR,			VIDEO_BUF_CAR,			VISIABLE },
-	{ VIEW_SINGLEVIEW,	VIDEO_BUF_LEFT,			VISIABLE },
-	{ VIEW_TIPBAR,		VIDEO_BUF_TIPBAR,		VISIABLE },
-//	PAGE_LEFT_FULL,
-	{ VIEW_SYSTHESIS,	VIDEO_BUF_SYNTHESIS,	INVISIABLE },
-	{ VIEW_CAR,			VIDEO_BUF_CAR,			INVISIABLE },
-	{ VIEW_FULLSCREEN,	VIDEO_BUF_LEFT,			VISIABLE },
-	{ VIEW_TIPBAR,		VIDEO_BUF_TIPBAR,		INVISIABLE },
-//	PAGE_RIGHT,
-	{ VIEW_SYSTHESIS,	VIDEO_BUF_SYNTHESIS,	VISIABLE },
-	{ VIEW_CAR,			VIDEO_BUF_CAR,			VISIABLE },
-	{ VIEW_FULLSCREEN,	VIDEO_BUF_RIGHT,		VISIABLE },
-	{ VIEW_TIPBAR,		VIDEO_BUF_TIPBAR,		VISIABLE },
-//	PAGE_RIGHT_FULL,
-	{ VIEW_SYSTHESIS,	VIDEO_BUF_SYNTHESIS,	INVISIABLE },
-	{ VIEW_CAR,			VIDEO_BUF_CAR,			INVISIABLE },
-	{ VIEW_FULLSCREEN,	VIDEO_BUF_RIGHT,		VISIABLE },
-	{ VIEW_TIPBAR,		VIDEO_BUF_TIPBAR,		INVISIABLE },
-//	PAGE_REAR,
-	{ VIEW_SYSTHESIS,	VIDEO_BUF_SYNTHESIS,	VISIABLE },
-	{ VIEW_CAR,			VIDEO_BUF_CAR,			VISIABLE },
-	{ VIEW_FULLSCREEN,	VIDEO_BUF_REAR,			VISIABLE },
-	{ VIEW_TIPBAR,		VIDEO_BUF_TIPBAR,		VISIABLE },
-//	PAGE_REAR_FULL,
-	{ VIEW_SYSTHESIS,	VIDEO_BUF_SYNTHESIS,	INVISIABLE },
-	{ VIEW_CAR,			VIDEO_BUF_CAR,			INVISIABLE },
-	{ VIEW_FULLSCREEN,	VIDEO_BUF_REAR,			VISIABLE },
-	{ VIEW_TIPBAR,		VIDEO_BUF_TIPBAR,		INVISIABLE },
-//	PAGE_AllVIEW,
-	{ VIEW_SPLIT,		VIDEO_BUF_LEFT,			VISIABLE },
-	{ VIEW_SPLIT,		VIDEO_BUF_FRONT,		VISIABLE },
-	{ VIEW_SPLIT,		VIDEO_BUF_RIGHT,		VISIABLE },
-	{ VIEW_SPLIT,		VIDEO_BUF_REAR,			VISIABLE },
-//	PAGE_MENU,				//菜单
-//		PAGE_MENU_SETPARAM, 	//设置参数
-//		PAGE_MENU_UPG,			//升级
-//		PAGE_MENU_COLABRAT, 	//标定
-
-};
 
 
 static tREGION aViewRegion[VIEW_END] = {
@@ -2751,8 +2283,13 @@ static tREGION aViewRegion[VIEW_END] = {
 	{270, 0, 736-270, 400, 90, 60 },	//single camera view
 	{320, 400, 400, 80, 0, 0 },	//Tip bar
 	{0, 0, 736, 480, 0, 0 },   //full screen
-	{0, 0, 320, 480, 24, 0 },	//split
+	{0, 0, 320, 240, 0, 0 },	//split
+	{320, 0, 736 - 320, 240, 0, 00 },	//split
+	{0, 240, 320, 240, 0, 0 },	//split
+	{320, 240, 736 - 320, 240, 0, 0 },	//split
 };
+
+
 
 
 #define	WIN_WITDTH				(736-320)	//466
@@ -2826,6 +2363,14 @@ const unsigned char ret_err_yuv[] ;
 const unsigned char bar_yuv[] ;
 const unsigned char bar_h_yuv[] ;
 
+const unsigned char title_menu_yuv[];
+const unsigned char title_param_yuv[];
+const unsigned char title_upd_yuv[];
+const unsigned char title_colab_yuv[];
+const unsigned char title_adv_yuv[];
+const unsigned char sep_yuv[];
+
+
 #endif
 
 static tPICYUV aItem_YUV[ITEM_MENU_END] = {
@@ -2838,47 +2383,50 @@ static tPICYUV aItem_YUV[ITEM_MENU_END] = {
 
 };
 
+
+
 static tPICYUV aBar_YUV = { bar_yuv, bar_h_yuv };
 
 
 //屏初始化
 void	Disp_OLED_Init(void)
 {
-	tDISP_OLED_FSM.u8PendingCommand = 0xFF;				
-	tDISP_OLED_FSM.u8CurrentPage = _PAGE_DEFAULT_;	
-	tDISP_OLED_FSM.bPageFresh = FALSE;				
+	tUIFsm.u8PendingCommand = 0xFF;
+	tUIFsm.u8CurrentPage = PAGE_DEFAULT;
+	tUIFsm.bPageFresh = FALSE;
 	
 	Init_Page();
 }
 
 
-/***********************************************************************************************************
-* 功能描述：	初始化页面控制流
-* 入    口：	无
-* 出    口：	无
-* 设    计：	高正东，2008-03-19
-***********************************************************************************************************/
+/*!
+ * 初始化页面控制流
+ * \n
+ *
+ * \n
+ * @see
+ */
 void	Init_Page(void)
 {	
-	s8	i = 0;
+	u8	i = 0;
 	u8	u8PageType = 0;
 	tPAGE	*pPage = NULL;
 
    	//清空项
 	memset(&aItem, 0, 4 * PAGE_TYPE_END * sizeof(tITEM));
-	memset(&aView, 0, VIEW_END * sizeof(tVIEW));
+//	memset(&aView, 0, VIEW_END * sizeof(tVIEW));
 
 	//1)初始化所有按钮
 	aButton[0].eType = BUTTON_OK;
 	aButton[0].u8Row = 2;
 	aButton[0].u8Column = 5;
-	aButton[0].u8Width = _BUTTON_WIDTH_2_X_;
+//	aButton[0].u8Width = _BUTTON_WIDTH_2_X_;
 
 	//初始化按钮-取消
 	aButton[1].eType = BUTTON_CANCEL;
 	aButton[1].u8Row = 2;
 	aButton[1].u8Column = 1;
-	aButton[1].u8Width = _BUTTON_WIDTH_2_X_;
+//	aButton[1].u8Width = _BUTTON_WIDTH_2_X_;
 
 	//2)初始化所有页面
 	u8PageType = PAGE_FRONT;
@@ -2895,28 +2443,35 @@ void	Init_Page(void)
 		{
 			//视频显示页面
 		case	PAGE_FRONT:
-		case	PAGE_FONT_FULL:
-		case	PAGE_LEFT:
-		case	PAGE_LEFT_FULL:
-		case	PAGE_RIGHT:
-		case	PAGE_RIGHT_FULL:
-		case	PAGE_REAR:
-		case	PAGE_REAR_FULL:
-		case	PAGE_AllVIEW:
-
-			pPage->pViews = aView[u8PageType];
-			pPage->pTitleBar = NULL;
-			pPage->pItems = NULL;
-			pPage->pButtons = NULL;
-			pPage->u8ButtonCnt = 0;
-			pPage->u8FocusItem = 0;
-			pPage->u8FocusButton = 0;
+			pPage->eViewType = VIEW_FRONT;
 			break;
-
+		case	PAGE_FONT_FULL:
+			pPage->eViewType = VIEW_FONT_FULL;
+			break;
+		case	PAGE_LEFT:
+			pPage->eViewType = VIEW_LEFT;
+			break;
+		case	PAGE_LEFT_FULL:
+			pPage->eViewType = VIEW_LEFT_FULL;
+			break;
+		case	PAGE_RIGHT:
+			pPage->eViewType = VIEW_RIGHT;
+			break;
+		case	PAGE_RIGHT_FULL:
+			pPage->eViewType = VIEW_RIGHT_FULL;
+			break;
+		case	PAGE_REAR:
+			pPage->eViewType = VIEW_REAR;
+			break;
+		case	PAGE_REAR_FULL:
+			pPage->eViewType = VIEW_REAR_FULL;
+			break;
+		case	PAGE_AllVIEW:
+			pPage->eViewType = VIEW_AllVIEW;
+			break;
 		case	PAGE_MENU:	//菜单
-		
-			pPage->pViews = NULL;
-			pPage->pTitleBar = aTitle_Menu;
+			pPage->eViewType = VIEW_MENU;
+			pPage->pTitleBar = title_menu_yuv;
 			pPage->pItems = aItem[PAGE_MENU];
 			pPage->pButtons = NULL;
 			pPage->u8ButtonCnt = 0;
@@ -2937,8 +2492,8 @@ void	Init_Page(void)
 		
 		case	PAGE_MENU_SETPARAM: 	//设置参数
 
-			pPage->pViews = NULL;
-			pPage->pTitleBar = aTitle_Param;
+			pPage->eViewType = VIEW_MENU;
+			pPage->pTitleBar = title_param_yuv;
 			pPage->pItems = NULL;
 			pPage->pButtons = NULL;
 			pPage->u8ButtonCnt = 0;
@@ -2949,8 +2504,8 @@ void	Init_Page(void)
 
 		case	PAGE_MENU_UPG:			//升级
 
-			pPage->pViews = NULL;
-			pPage->pTitleBar = aTitle_Upd;
+			pPage->eViewType = VIEW_MENU;
+			pPage->pTitleBar = title_upd_yuv;
 			pPage->pItems = NULL;
 			pPage->pButtons = NULL;
 			pPage->u8ButtonCnt = 0;
@@ -2961,9 +2516,9 @@ void	Init_Page(void)
 
 		case	PAGE_MENU_COLABRAT: 	//标定
 
-			pPage->pViews = NULL;
-			pPage->pTitleBar = aTitle_Colabrate;
-			pPage->pItems = aItem[];
+			pPage->eViewType = VIEW_MENU;
+			pPage->pTitleBar = title_colab_yuv;
+			pPage->pItems = aItem[PAGE_MENU_COLABRAT];
 			pPage->pButtons = NULL;
 			pPage->u8ButtonCnt = 0;
 			pPage->u8FocusItem = 0;
@@ -2978,10 +2533,10 @@ void	Init_Page(void)
 
 
 			//高级功能页面
-		case	_PAGE_MAIN_MENU_:
+		case	PAGE_MENU_ADVANCEDFUNC:
 			
-			pPage->pViews = NULL;
-			pPage->pTitleBar = aTitle_AdvancedFunc;
+			pPage->eViewType = VIEW_MENU;
+			pPage->pTitleBar = title_adv_yuv;
 			pPage->pItems = NULL;
 			pPage->pButtons = NULL;
 			pPage->u8ButtonCnt = 0;
@@ -3007,7 +2562,7 @@ void	Init_Page(void)
 void	UI_ShowDefaultPage()
 {
 	//显示默认页面
-	tDISP_OLED_FSM.u8CurrentPage = PAGE_DEFAULT;
+	tUIFsm.u8CurrentPage = PAGE_DEFAULT;
 
 	Show_Page(PAGE_DEFAULT);
 }
@@ -3026,10 +2581,10 @@ void	UI_Process()
 
 
 	//初始化并显示第一个页面即默认页面
-	if(tDISP_OLED_FSM.u8CurrentPage == 0xFF)
+	if(tUIFsm.u8CurrentPage == 0xFF)
 	{
 		//显示默认页面
-		tDISP_OLED_FSM.u8CurrentPage = PAGE_DEFAULT;
+		tUIFsm.u8CurrentPage = PAGE_DEFAULT;
 
 		Show_Page(PAGE_DEFAULT);
 
@@ -3037,13 +2592,13 @@ void	UI_Process()
 	}
 
 	//取出按键消息				  
-	u8Command = tDISP_OLED_FSM.u8PendingCommand;
+	u8Command = tUIFsm.u8PendingCommand;
 	
 	//按键有效？
 	if(u8Command != KEY_END)
 	{
 		//准备接收新的按键消息
-		tDISP_OLED_FSM.u8PendingCommand = KEY_UNKNOWN;
+		tUIFsm.u8PendingCommand = KEY_UNKNOWN;
 
 		//按键处理
 		UI_Key_Process(u8Command);
@@ -3061,12 +2616,12 @@ void	UI_Process()
  */
 void	UI_Key_Process(eKEYTYPE eKeyType)
 {
-	s8	i = 0;
+	u8	i = 0;
 	u8 	u8FocusItem = 0;
 	u8	u8CurrentPage = 0;
 
 	//取当前页面指针		 
-	pCurPage = &(tPage_Flow.aPage[tDISP_OLED_FSM.u8CurrentPage]);
+	pCurPage = &(tPage_Flow.aPage[tUIFsm.u8CurrentPage]);
 
 	if(pCurPage == NULL/* || pNextPage == NULL*/)
 	{
@@ -3079,891 +2634,440 @@ void	UI_Key_Process(eKEYTYPE eKeyType)
 	u8FocusItem = pCurPage->u8FocusItem;
 
 	//根据页面类型处理按键消息
-	switch(tDISP_OLED_FSM.u8CurrentPage)		
+	switch(tUIFsm.u8CurrentPage)
 	{
-		//默认页面
-		case	PAGE_FRONT:
-	
-			if(eKeyType == KEY_LEFT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_FRONT;
+	case	PAGE_FRONT:
+	case	PAGE_FONT_FULL:
+	case	PAGE_LEFT:
+	case	PAGE_LEFT_FULL:
+	case	PAGE_RIGHT:
+	case	PAGE_RIGHT_FULL:
+	case	PAGE_REAR:
+	case	PAGE_REAR_FULL:
+	case	PAGE_AllVIEW:
 
+		if(eKeyType == KEY_LEFT)	//遥控器消息:电源
+		{
+			if(tUIFsm.u8CurrentPage == PAGE_LEFT) {
 				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT;
+				tUIFsm.u8CurrentPage = PAGE_LEFT_FULL;
 
-				//显示主页面
-				Show_Page(PAGE_LEFT);
-			}
-			if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_FRONT;
-
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT;
-
-				//显示主页面
-				Show_Page(PAGE_RIGHT);
-			}
-
-			if(eKeyType == KEY_REAR)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_FRONT;
-
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = KEY_REAR;
-
-				//显示主页面
-				Show_Page(PAGE_REAR);
-			}			
-			else if(eKeyType == MENU_POWER)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_MENU].u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_MENU;
-
-				//显示主页面
-				Show_Page(PAGE_MENU);
-			}
-			else if(eKeyType == KEY_FRONT)	//进入前视全景
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FONT_FULL].u8ParentPageId = PAGE_DEFAULT;
-
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FONT_FULL;
-
-				//显示主页面
-				Show_Page(PAGE_FONT_FULL);
-			}
-			else{
-			}
-
-			break;
-			
-		//前视全屏
-		case	PAGE_FONT_FULL:
-			
-			if(eKeyType == KEY_FRONT)	//全景下重进入前视
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FRONT;
-		
-				//显示主页面
-				Show_Page(PAGE_FRONT);
-			}
-			else if(eKeyType == KEY_LEFT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_FRONT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT;
-		
-				//显示主页面
-				Show_Page(PAGE_LEFT);
-			}
-			else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_FRONT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT;
-		
-				//显示主页面
-				Show_Page(PAGE_RIGHT);
-			}
-			else if(eKeyType == KEY_REAR)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_FRONT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = KEY_REAR;
-		
-				//显示主页面
-				Show_Page(PAGE_REAR);
-			}			
-			else if(eKeyType == MENU_POWER) //遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_MENU].u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_MENU;
-		
-				//显示主页面
-				Show_Page(PAGE_MENU);
-			}
-			else{
-			}
-			
-			break;
-			
-		//左视
-		case	PAGE_LEFT:
-			
-			if(eKeyType == KEY_FRONT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FRONT;
-		
-				//显示主页面
-				Show_Page(PAGE_FRONT);
-			}
-			else if(eKeyType == KEY_LEFT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT_FULL].u8ParentPageId = PAGE_LEFT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT_FULL;
-		
 				//显示主页面
 				Show_Page(PAGE_LEFT_FULL);
 			}
-			if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-		
+			else {
+
 				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT;
-		
-				//显示主页面
-				Show_Page(PAGE_RIGHT);
-			}
-		
-			if(eKeyType == KEY_REAR)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_REAR;
-		
-				//显示主页面
-				Show_Page(PAGE_REAR);
-			}			
-			else if(eKeyType == MENU_POWER) //遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_MENU].u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_MENU;
-		
-				//显示主页面
-				Show_Page(PAGE_MENU);
-			}
-			else{
-			}
-			break;
-			
-		case	PAGE_LEFT_FULL:
-			
-			if(eKeyType == KEY_FRONT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FRONT;
-		
-				//显示主页面
-				Show_Page(PAGE_FRONT);
-			}
-			else if(eKeyType == KEY_LEFT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT;
-		
+				tUIFsm.u8CurrentPage = PAGE_LEFT;
+
 				//显示主页面
 				Show_Page(PAGE_LEFT);
 			}
-			else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT;
-		
-				//显示主页面
-				Show_Page(PAGE_RIGHT);
-			}
-			else if(eKeyType == KEY_REAR)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_REAR;
-		
-				//显示主页面
-				Show_Page(PAGE_REAR);
-			}			
-			else if(eKeyType == MENU_POWER) //遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_MENU].u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT_FULL;
-		
-				//显示主页面
-				Show_Page(PAGE_MENU);
-			}
-			else{
-			}
-			break;
+		}		
+		else if(eKeyType == KEY_RIGHT)	//右视
+		{
+			if(tUIFsm.u8CurrentPage == PAGE_RIGHT) {
 			
-		case	PAGE_RIGHT:
+				//修改屏状态机当前页面为主页面
+				tUIFsm.u8CurrentPage = PAGE_RIGHT_FULL;
 			
-			if(eKeyType == KEY_FRONT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FRONT;
-		
-				//显示主页面
-				Show_Page(PAGE_FRONT);
-			}
-			else if(eKeyType == KEY_LEFT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT;
-		
-				//显示主页面
-				Show_Page(PAGE_LEFT);
-			}
-			else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT_FULL].u8ParentPageId = PAGE_RIGHT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT_FULL;
-		
 				//显示主页面
 				Show_Page(PAGE_RIGHT_FULL);
 			}
-			else if(eKeyType == KEY_REAR)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_REAR;
-		
-				//显示主页面
-				Show_Page(PAGE_REAR);
-			}			
-			else if(eKeyType == MENU_POWER) //遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_MENU].u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT_FULL;
-		
-				//显示主页面
-				Show_Page(PAGE_MENU);
-			}
-			else{
-			}
-			break;
-
-		case	PAGE_RIGHT_FULL:
+			else {
 			
-			if(eKeyType == KEY_FRONT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-		
 				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FRONT;
-		
-				//显示主页面
-				Show_Page(PAGE_FRONT);
-			}
-			else if(eKeyType == KEY_LEFT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT;
-		
-				//显示主页面
-				Show_Page(PAGE_LEFT);
-			}
-			else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT;
-		
+				tUIFsm.u8CurrentPage = PAGE_RIGHT;
+			
 				//显示主页面
 				Show_Page(PAGE_RIGHT);
 			}
-			else if(eKeyType == KEY_REAR)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_REAR;
-		
-				//显示主页面
-				Show_Page(PAGE_REAR);
-			}			
-			else if(eKeyType == MENU_POWER) //遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_MENU].u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_MENU;
-		
-				//显示主页面
-				Show_Page(PAGE_MENU);
-			}
-			else{
-			}
-			break;
+		}
+		//前视
+		else if(eKeyType == KEY_FRONT)			
+		{
+			if(tUIFsm.u8CurrentPage == PAGE_FRONT) {
 			
-		case	PAGE_REAR:
-			
-			if(eKeyType == KEY_FRONT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-		
 				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FRONT;
-		
+				tUIFsm.u8CurrentPage = PAGE_FONT_FULL;
+			
+				//显示主页面
+				Show_Page(PAGE_FONT_FULL);
+			}
+			else {
+			
+				//修改屏状态机当前页面为主页面
+				tUIFsm.u8CurrentPage = PAGE_FRONT;
+			
 				//显示主页面
 				Show_Page(PAGE_FRONT);
 			}
-			else if(eKeyType == KEY_LEFT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-		
+		}
+		//后视
+		else if(eKeyType == KEY_REAR)			
+		{
+			if(tUIFsm.u8CurrentPage == PAGE_REAR) {
+			
 				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT;
-		
-				//显示主页面
-				Show_Page(PAGE_LEFT);
-			}
-			else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT;
-		
-				//显示主页面
-				Show_Page(PAGE_RIGHT);
-			}
-			else if(eKeyType == KEY_REAR)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR_FULL].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_REAR_FULL;
-		
+				tUIFsm.u8CurrentPage = PAGE_REAR_FULL;
+			
 				//显示主页面
 				Show_Page(PAGE_REAR_FULL);
-			}			
-			else if(eKeyType == MENU_POWER) //遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_MENU].u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_MENU;
-		
-				//显示主页面
-				Show_Page(PAGE_MENU);
 			}
-			else{
-			}
-			break;
+			else {
 			
-		case	PAGE_REAR_FULL:
+				//修改屏状态机当前页面为主页面
+				tUIFsm.u8CurrentPage = PAGE_REAR;
 			
-			if(eKeyType == KEY_FRONT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FRONT;
-		
-				//显示主页面
-				Show_Page(PAGE_FRONT);
-			}
-			else if(eKeyType == KEY_LEFT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT;
-		
-				//显示主页面
-				Show_Page(PAGE_LEFT);
-			}
-			else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT;
-		
-				//显示主页面
-				Show_Page(PAGE_RIGHT);
-			}
-			else if(eKeyType == KEY_REAR)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_REAR;
-		
 				//显示主页面
 				Show_Page(PAGE_REAR);
-			}			
-			else if(eKeyType == MENU_POWER) //遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_MENU].u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_MENU;
-		
-				//显示主页面
-				Show_Page(PAGE_MENU);
 			}
-			else{
-			}
-			break;
+		}
+		//遥控器消息:电源
+		else if(eKeyType == MENU_POWER) 
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_MENU].u8ParentPageId = tUIFsm.u8CurrentPage;
+		
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_MENU;
+		
+			//显示主页面
+			Show_Page(PAGE_MENU);
+		}
+		//其他翻页消息不响应
+		else {
+		}
+		
+		break;
+	//主菜单
+	case	PAGE_MENU:	
 			
-		case	PAGE_AllVIEW:	//四路同时显示
-			
-			if(eKeyType == KEY_FRONT)	
+		if(eKeyType == KEY_FRONT)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_FRONT;
+	
+			//显示主页面
+			Show_Page(PAGE_FRONT);
+		}
+		else if(eKeyType == KEY_LEFT)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_LEFT;
+	
+			//显示主页面
+			Show_Page(PAGE_LEFT);
+		}
+		else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_RIGHT;
+	
+			//显示主页面
+			Show_Page(PAGE_RIGHT);
+		}
+		else if(eKeyType == KEY_REAR)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_REAR;
+	
+			//显示主页面
+			Show_Page(PAGE_REAR);
+		}			
+		else{
+			if(eKeyType == MENU_UP)   
 			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FRONT;
-		
-				//显示主页面
-				Show_Page(PAGE_FRONT);
+				if(pCurPage->u8FocusItem == 0)
+					break;
+				
+				//正常显示当前项
+				Show_Item(PAGE_MENU, pCurPage->u8FocusItem, 0 );
+
+				//焦点切换到下一项
+				pCurPage->u8FocusItem --;
+				
+				//高亮显示下一项
+				Show_Item(PAGE_MENU, pCurPage->u8FocusItem, 1 ); 
+				
 			}
-			else if(eKeyType == KEY_LEFT)	
+			else if(eKeyType == MENU_DOWN)   
 			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT;
-		
-				//显示主页面
-				Show_Page(PAGE_LEFT);
+				//正常显示当前项
+				Show_Item(PAGE_MENU, pCurPage->u8FocusItem, 0 );
+
+				//焦点切换到下一项
+				if(pCurPage->u8FocusItem < pCurPage->u8ItemCnt - 1)
+					pCurPage->u8FocusItem ++;
+				
+				//高亮显示下一项
+				Show_Item(PAGE_MENU, pCurPage->u8FocusItem, 1 ); 		
 			}
-			else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
+			else if(eKeyType == MENU_OK)   
 			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT;
-		
-				//显示主页面
-				Show_Page(PAGE_RIGHT);
-			}
-			else if(eKeyType == KEY_REAR)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_REAR;
-		
-				//显示主页面
-				Show_Page(PAGE_REAR);
-			}			
-			else if(eKeyType == MENU_POWER) //遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_MENU].u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_MENU;
-		
-				//显示主页面
-				Show_Page(PAGE_MENU);
-			}
-			else{
-			}
-			break;
-			
-		case	PAGE_MENU:	//菜单
-			
-			if(eKeyType == KEY_FRONT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FRONT;
-		
-				//显示主页面
-				Show_Page(PAGE_FRONT);
-			}
-			else if(eKeyType == KEY_LEFT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT;
-		
-				//显示主页面
-				Show_Page(PAGE_LEFT);
-			}
-			else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT;
-		
-				//显示主页面
-				Show_Page(PAGE_RIGHT);
-			}
-			else if(eKeyType == KEY_REAR)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_REAR;
-		
-				//显示主页面
-				Show_Page(PAGE_REAR);
-			}			
-			else{
-				if(eKeyType == MENU_UP)   
+				//当前位置页面
+				if(pCurPage->u8FocusItem == 0) 
 				{
-					if(pCurPage->u8FocusItem == 0)
+					//指向待跳转页面，组织项显示内容
+					pNextPage = &(tPage_Flow.aPage[PAGE_MENU_SETPARAM]);
+					pNextPage->u8ParentPageId = tUIFsm.u8CurrentPage;
+
+					tUIFsm.u8CurrentPage = PAGE_MENU_SETPARAM;
+					Show_Page(PAGE_MENU_SETPARAM);
+				}
+				//当前位置页面
+				else if(pCurPage->u8FocusItem == 1) 
+				{
+					//指向待跳转页面，组织项显示内容
+					pNextPage = &(tPage_Flow.aPage[PAGE_MENU_UPG]);
+					pNextPage->u8ParentPageId = tUIFsm.u8CurrentPage;
+
+					tUIFsm.u8CurrentPage = PAGE_MENU_UPG;
+					Show_Page(PAGE_MENU_UPG);
+				}
+				//当前位置页面
+				else if(pCurPage->u8FocusItem == 2) 
+				{
+					//指向待跳转页面，组织项显示内容
+					pNextPage = &(tPage_Flow.aPage[PAGE_MENU_COLABRAT]);
+					pNextPage->u8ParentPageId = tUIFsm.u8CurrentPage;
+
+					tUIFsm.u8CurrentPage = PAGE_MENU_COLABRAT;
+					Show_Page(PAGE_MENU_COLABRAT);
+				}
+				//当前位置页面
+				else if(pCurPage->u8FocusItem == 3) 
+				{
+					//指向待跳转页面，组织项显示内容
+					pNextPage = &(tPage_Flow.aPage[PAGE_MENU_ADVANCEDFUNC]);
+					pNextPage->u8ParentPageId = tUIFsm.u8CurrentPage;
+
+					tUIFsm.u8CurrentPage = PAGE_MENU_ADVANCEDFUNC;
+					Show_Page(PAGE_MENU_ADVANCEDFUNC);
+				}
+				else {
+				}
+			}
+			else if(eKeyType == MENU_BACK)   
+			{
+				tUIFsm.u8CurrentPage = pCurPage->u8ParentPageId;
+				Show_Page(tUIFsm.u8CurrentPage);
+			}
+			
+		}
+		break;
+	
+	case	PAGE_MENU_COLABRAT:	//标定
+		
+		if(eKeyType == KEY_FRONT)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_FRONT;
+	
+			//显示主页面
+			Show_Page(PAGE_FRONT);
+		}
+		else if(eKeyType == KEY_LEFT)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_LEFT;
+	
+			//显示主页面
+			Show_Page(PAGE_LEFT);
+		}
+		else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_RIGHT;
+	
+			//显示主页面
+			Show_Page(PAGE_RIGHT);
+		}
+		else if(eKeyType == KEY_REAR)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_REAR;
+	
+			//显示主页面
+			Show_Page(PAGE_REAR);
+		}			
+		else{
+			if(eKeyType == MENU_UP)   
+			{
+				if(pCurPage->u8FocusItem == 0)
 						break;
 					
-					//正常显示当前项
-					Show_Item(PAGE_MENU, pCurPage->u8FocusItem, 0 );
-	
-					//焦点切换到下一项
-					pCurPage->u8FocusItem --;
-					
-					//高亮显示下一项
-					Show_Item(PAGE_MENU, pCurPage->u8FocusItem, 1 ); 
-					
-				}
-				else if(eKeyType == MENU_DOWN)   
-				{
-					//正常显示当前项
-					Show_Item(PAGE_MENU, pCurPage->u8FocusItem, 0 );
-
-					//焦点切换到下一项
-					if(pCurPage->u8FocusItem < pCurPage->u8ItemCnt - 1)
+				//正常显示当前项
+				Show_Item(PAGE_MENU_COLABRAT, pCurPage->u8FocusItem, 0 );
+			
+				//焦点切换到下一项
+				pCurPage->u8FocusItem --;
+				
+				//高亮显示下一项
+				Show_Item(PAGE_MENU_COLABRAT, pCurPage->u8FocusItem, 1 ); 
+				
+			}
+			else if(eKeyType == MENU_DOWN)	 
+			{
+				//正常显示当前项
+				Show_Item(PAGE_MENU_COLABRAT, pCurPage->u8FocusItem, 0 );
+		
+				//焦点切换到下一项
+				if(pCurPage->u8FocusItem < pCurPage->u8ItemCnt - 1)
 						pCurPage->u8FocusItem ++;
-					
-					//高亮显示下一项
-					Show_Item(PAGE_MENU, pCurPage->u8FocusItem, 1 ); 		
-				}
-				else if(eKeyType == MENU_OK)   
-				{
-					//当前位置页面
-					if(pCurPage->u8FocusItem == 0) 
-					{
-						//指向待跳转页面，组织项显示内容
-						pNextPage = &(tPage_Flow.aPage[PAGE_MENU_SETPARAM]);
-						pNextPage->u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-
-						tDISP_OLED_FSM.u8CurrentPage = PAGE_MENU_SETPARAM;
-						Show_Page(PAGE_MENU_SETPARAM);
-					}
-					//当前位置页面
-					else if(pCurPage->u8FocusItem == 1) 
-					{
-						//指向待跳转页面，组织项显示内容
-						pNextPage = &(tPage_Flow.aPage[PAGE_MENU_UPG]);
-						pNextPage->u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-
-						tDISP_OLED_FSM.u8CurrentPage = PAGE_MENU_UPG;
-						Show_Page(PAGE_MENU_UPG);
-					}
-					//当前位置页面
-					else if(pCurPage->u8FocusItem == 2) 
-					{
-						//指向待跳转页面，组织项显示内容
-						pNextPage = &(tPage_Flow.aPage[PAGE_MENU_COLABRAT]);
-						pNextPage->u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-
-						tDISP_OLED_FSM.u8CurrentPage = PAGE_MENU_COLABRAT;
-						Show_Page(PAGE_MENU_COLABRAT);
-					}
-					//当前位置页面
-					else if(pCurPage->u8FocusItem == 3) 
-					{
-						//指向待跳转页面，组织项显示内容
-						pNextPage = &(tPage_Flow.aPage[PAGE_MENU_ADVANCEDFUNC]);
-						pNextPage->u8ParentPageId = tDISP_OLED_FSM.u8CurrentPage;
-
-						tDISP_OLED_FSM.u8CurrentPage = PAGE_MENU_ADVANCEDFUNC;
-						Show_Page(PAGE_MENU_ADVANCEDFUNC);
-					}
-					else {
-					}
-				}
-				else if(eKeyType == MENU_BACK)   
-				{
-					tDISP_OLED_FSM.u8CurrentPage = pCurPage->u8ParentPageId;
-					Show_Page(tDISP_OLED_FSM.u8CurrentPage);
-				}
 				
+				//高亮显示下一项
+				Show_Item(PAGE_MENU_COLABRAT, pCurPage->u8FocusItem, 1 ); 		
 			}
-			break;
-			
-		case	PAGE_MENU_COLABRAT:	//标定
-			
-			if(eKeyType == KEY_FRONT)	
+			else if(eKeyType == MENU_OK)   
 			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FRONT;
-		
-				//显示主页面
-				Show_Page(PAGE_FRONT);
-			}
-			else if(eKeyType == KEY_LEFT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT;
-		
-				//显示主页面
-				Show_Page(PAGE_LEFT);
-			}
-			else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT;
-		
-				//显示主页面
-				Show_Page(PAGE_RIGHT);
-			}
-			else if(eKeyType == KEY_REAR)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_REAR;
-		
-				//显示主页面
-				Show_Page(PAGE_REAR);
-			}			
-			else{
-				if(eKeyType == MENU_UP)   
+				//标定-写参数页面
+				if(pCurPage->u8FocusItem == 0) 
 				{
-					if(pCurPage->u8FocusItem == 0)
-							break;
-						
-					//正常显示当前项
-					Show_Item(PAGE_MENU_COLABRAT, pCurPage->u8FocusItem, 0 );
-				
-					//焦点切换到下一项
-					pCurPage->u8FocusItem --;
-					
-					//高亮显示下一项
-					Show_Item(PAGE_MENU_COLABRAT, pCurPage->u8FocusItem, 1 ); 
-					
-				}
-				else if(eKeyType == MENU_DOWN)	 
-				{
-					//正常显示当前项
-					Show_Item(PAGE_MENU_COLABRAT, pCurPage->u8FocusItem, 0 );
-			
-					//焦点切换到下一项
-					if(pCurPage->u8FocusItem < pCurPage->u8ItemCnt - 1)
-							pCurPage->u8FocusItem ++;
-					
-					//高亮显示下一项
-					Show_Item(PAGE_MENU_COLABRAT, pCurPage->u8FocusItem, 1 ); 		
-				}
-				else if(eKeyType == MENU_OK)   
-				{
-					//标定-写参数页面
-					if(pCurPage->u8FocusItem == 0) 
-					{
 
 
-					}
-					//标定-执行标定页面
-					else if(pCurPage->u8FocusItem == 1) 
-					{
-
-
-					}
 				}
-				else 	 
+				//标定-执行标定页面
+				else if(pCurPage->u8FocusItem == 1) 
 				{
+
+
 				}
-				
 			}
-			break;
+			else 	 
+			{
+			}
 			
-		case	PAGE_MENU_UPG: //升级
-			
-			if(eKeyType == KEY_FRONT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FRONT;
-		
-				//显示主页面
-				Show_Page(PAGE_FRONT);
-			}
-			else if(eKeyType == KEY_LEFT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT;
-		
-				//显示主页面
-				Show_Page(PAGE_LEFT);
-			}
-			else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT;
-		
-				//显示主页面
-				Show_Page(PAGE_RIGHT);
-			}
-			else if(eKeyType == KEY_REAR)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_REAR;
-		
-				//显示主页面
-				Show_Page(PAGE_REAR);
-			}			
-			else{
-			}
-			break;
-			
-		case	PAGE_MENU_ADVANCEDFUNC: //升级
-			
-			if(eKeyType == KEY_FRONT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_FRONT;
-		
-				//显示主页面
-				Show_Page(PAGE_FRONT);
-			}
-			else if(eKeyType == KEY_LEFT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_LEFT;
-		
-				//显示主页面
-				Show_Page(PAGE_LEFT);
-			}
-			else if(eKeyType == KEY_RIGHT)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_RIGHT;
-		
-				//显示主页面
-				Show_Page(PAGE_RIGHT);
-			}
-			else if(eKeyType == KEY_REAR)	
-			{
-				//记录父页面号
-				tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-		
-				//修改屏状态机当前页面为主页面
-				tDISP_OLED_FSM.u8CurrentPage = PAGE_REAR;
-		
-				//显示主页面
-				Show_Page(PAGE_REAR);
-			}			
-			else{
-			}
-			break;
-		default:
-			break;
-				
 		}
+		break;
+		
+	case	PAGE_MENU_UPG: //升级
+		
+		if(eKeyType == KEY_FRONT)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_FRONT;
+	
+			//显示主页面
+			Show_Page(PAGE_FRONT);
+		}
+		else if(eKeyType == KEY_LEFT)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_LEFT;
+	
+			//显示主页面
+			Show_Page(PAGE_LEFT);
+		}
+		else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_RIGHT;
+	
+			//显示主页面
+			Show_Page(PAGE_RIGHT);
+		}
+		else if(eKeyType == KEY_REAR)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_REAR;
+	
+			//显示主页面
+			Show_Page(PAGE_REAR);
+		}			
+		else{
+		}
+		break;
+		
+	case	PAGE_MENU_ADVANCEDFUNC: //升级
+		
+		if(eKeyType == KEY_FRONT)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_FRONT;
+	
+			//显示主页面
+			Show_Page(PAGE_FRONT);
+		}
+		else if(eKeyType == KEY_LEFT)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_LEFT;
+	
+			//显示主页面
+			Show_Page(PAGE_LEFT);
+		}
+		else if(eKeyType == KEY_RIGHT)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_RIGHT;
+	
+			//显示主页面
+			Show_Page(PAGE_RIGHT);
+		}
+		else if(eKeyType == KEY_REAR)	
+		{
+			//记录父页面号
+			tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
+	
+			//修改屏状态机当前页面为主页面
+			tUIFsm.u8CurrentPage = PAGE_REAR;
+	
+			//显示主页面
+			Show_Page(PAGE_REAR);
+		}			
+		else{
+		}
+		break;
+	default:
+		break;
+			
+	}
 }
 
 
@@ -3993,17 +3097,14 @@ void	Show_Page(u8 u8PageType)
 	pPage = &(tPage_Flow.aPage[u8PageType]);
 
 	//显示视频画面
-	if( pPage->pViews != NULL )
-	{
-		for(i = 0; i < 4; i++)
-		{
-			Show_View(pPage->pViews[i]);		
-		}
-	}
+	Show_View(pPage->eViewType);
 
 	//显示标题栏
-	Show_Title();
-
+	if(pPage->pTitleBar != NULL)
+	{
+		Show_Title(pPage->pTitleBar->pSrc);
+	}
+	
 	//其他类型页面，显示项目
 	if( pPage->pItems != NULL )
 	{
@@ -4047,15 +3148,61 @@ void	Show_Page(u8 u8PageType)
  * \n
  * @see
  */
-void Show_View(tVIEW *pView)
+void Show_View(eVIEWTYPE eViewType)
 {
-	if(pView == NULL)
-		return;
-
-	BitBlt(&aViewRegion[pView->eType], pView->pSrc);
+	switch(eViewType)
+	{
+	case	VIEW_FRONT:
+		BitBlt(&aViewRegion[VIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
+		BitBlt(&aViewRegion[VIEW_CAR], VIDEO_BUF_CAR);
+		BitBlt(&aViewRegion[VIEW_SINGLEVIEW], VIDEO_BUF_FRONT);
+		BitBlt(&aViewRegion[VIEW_TIPBAR], VIDEO_BUF_TIPBAR);
+		break;
+	case	VIEW_FONT_FULL:
+		BitBlt(&aViewRegion[VIEW_FULLSCREEN], VIDEO_BUF_FRONT);
+		break;
+	case	VIEW_LEFT:
+		BitBlt(&aViewRegion[VIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
+		BitBlt(&aViewRegion[VIEW_CAR], VIDEO_BUF_CAR);
+		BitBlt(&aViewRegion[VIEW_SINGLEVIEW], VIDEO_BUF_LEFT);
+		BitBlt(&aViewRegion[VIEW_TIPBAR], VIDEO_BUF_TIPBAR);
+		break;
+	case	VIEW_LEFT_FULL:
+		BitBlt(&aViewRegion[VIEW_FULLSCREEN], VIDEO_BUF_LEFT);
+		break;
+	case	VIEW_RIGHT:
+		BitBlt(&aViewRegion[VIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
+		BitBlt(&aViewRegion[VIEW_CAR], VIDEO_BUF_CAR);
+		BitBlt(&aViewRegion[VIEW_SINGLEVIEW], VIDEO_BUF_RIGHT);
+		BitBlt(&aViewRegion[VIEW_TIPBAR], VIDEO_BUF_TIPBAR);
+ 		break;
+	case	VIEW_RIGHT_FULL:
+		BitBlt(&aViewRegion[VIEW_FULLSCREEN], VIDEO_BUF_RIGHT);
+		break;
+	case	VIEW_REAR:
+		BitBlt(&aViewRegion[VIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
+		BitBlt(&aViewRegion[VIEW_CAR], VIDEO_BUF_CAR);
+		BitBlt(&aViewRegion[VIEW_SINGLEVIEW], VIDEO_BUF_REAR);
+		BitBlt(&aViewRegion[VIEW_TIPBAR], VIDEO_BUF_TIPBAR);
+		break;
+	case	VIEW_REAR_FULL:
+		BitBlt(&aViewRegion[VIEW_FULLSCREEN], VIDEO_BUF_REAR);
+		break;
+	case	VIEW_AllVIEW:
+		BitBlt(&aViewRegion[VIEW_SPLIT_00], VIDEO_BUF_FRONT);
+		BitBlt(&aViewRegion[VIEW_SPLIT_01], VIDEO_BUF_LEFT);
+		BitBlt(&aViewRegion[VIEW_SPLIT_10], VIDEO_BUF_RIGHT);
+		BitBlt(&aViewRegion[VIEW_SPLIT_11], VIDEO_BUF_REAR);
+ 		break;
+	case	VIEW_MENU:
+		BitBlt(&aViewRegion[VIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
+		break;
+	default:
+		break;
+	}
 }
 
-	
+
 /*!
  * 显示列表
  * \n
@@ -4167,12 +3314,11 @@ void	Show_Item(const u8 u8PageType, const u8 u8ItemIndex, u8 u8ShowType)
  * \n
  * @see
  */
-void Show_Title()
+void Show_Title(void *pSrc)
 {
-	void *pSrc;
 	tREGION tRegion;
 
-	pSrc = title_yuv;
+	//显示标题栏
 	tRegion.win_startX = TITLE_WIN_START_X;
 	tRegion.crop_startY = TITLE_WIN_START_Y;
 	tRegion.win_Width = TITLE_WIDTH;
@@ -4182,9 +3328,8 @@ void Show_Title()
 	
 	BitBlt(&tRegion, pSrc); 
 
-	//显示分隔条
+	//再显示分隔条
 
-	pSrc = sep_yuv;
 	tRegion.win_startX = SEP_START_X;
 	tRegion.crop_startY = SEP_START_Y;
 	tRegion.win_Width = SEP_WIDTH;
@@ -4192,8 +3337,9 @@ void Show_Title()
 	tRegion.crop_startX = 0;
 	tRegion.crop_startY = 0;
 	
-	BitBlt(&tRegion, pSrc); 
+	BitBlt(&tRegion, sep_yuv); 
 }
+
 
 
 /*!
@@ -4212,11 +3358,11 @@ void	BitBlt(tREGION *ptRegion, void *pSrc)
 	
 	edmaWarpImgCpy4(
 		myBopTaskCtxt.hEdma,
-		(void *)(pSrc + 736 * 2 * ptRegion->crop_startY[8] + ptRegion->crop_startX[8] * 2),
-		(void *)(tpHandle.outputBuffer + ptRegion->win_startX[8] * 2 + 736 * 2 * ptRegion->win_startY[8] ),
-		ptRegion->win_Width[8] * 2, 
-		ptRegion->win_Height[8], 
-		ptRegion->win_Width[8]*2, 736*2
+		(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
+		(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY ),
+		ptRegion->win_Width * 2, 
+		ptRegion->win_Height, 
+		ptRegion->win_Width*2, 736*2
 		);//liuxu, 06/17/2014.
 }
 
@@ -4237,17 +3383,33 @@ void	BitBlt(tREGION *ptRegion, void *pSrc)
  */
 void	BitBlt_Raw(int win_startX, int win_startY, int win_Width, int win_Height, int crop_startX, int crop_startY, void *pSrc)
 {
-	if((ptRegion == NULL) || (pSrc == NULL))
+	if(pSrc == NULL)
 		return;
 	
 	edmaWarpImgCpy4(
 		myBopTaskCtxt.hEdma,
-		(void *)(pSrc + 736 * 2 * crop_startY[8] + crop_startX[8] * 2),
-		(void *)(tpHandle.outputBuffer + win_startX[8] * 2 + 736 * 2 * win_startY[8] ),
-		win_Width[8] * 2, 
-		win_Height[8], 
-		win_Width[8]*2, 736*2
+		(void *)(pSrc + 736 * 2 * crop_startY + crop_startX * 2),
+		(void *)(tpHandle.outputBuffer + win_startX * 2 + 736 * 2 * win_startY ),
+		win_Width * 2, 
+		win_Height, 
+		win_Width*2, 736*2
 		);//liuxu, 06/17/2014.
+}
+
+/*!
+ * 显示按钮
+ * \n
+ *
+ * @param u8ButtonIndex
+ * @param u8Page
+ * @param u8ShowType
+ * \n
+ * @see
+ */
+void	Show_Button(u8 u8Page, u8 u8ButtonIndex, u8 u8ShowType)
+{
+
+
 }
 
 #endif
