@@ -1,0 +1,20 @@
+cd D:\工作\360\界面设计\UI\menu/
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 
+yuvit.exe -f yuyv adv.bmp ../yuv/adv.yuv 

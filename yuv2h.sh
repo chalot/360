@@ -1,0 +1,25 @@
+xxd -i yuv/bar.yuv > inc/bar.h
+xxd -i yuv/bar_h.yuv > inc/bar_h.h
+xxd -i yuv/car.yuv > inc/car.h
+xxd -i yuv/colab_clb.yuv > inc/colab_clb.h
+xxd -i yuv/colab_clb_h.yuv > inc/colab_clb_h.h
+xxd -i yuv/colab_wp.yuv > inc/colab_wp.h
+xxd -i yuv/colab_wp_h.yuv > inc/colab_wp_h.h
+xxd -i yuv/menu_adv.yuv > inc/menu_adv.h
+xxd -i yuv/menu_adv_h.yuv > inc/menu_adv_h.h
+xxd -i yuv/menu_cola.yuv > inc/menu_cola.h
+xxd -i yuv/menu_cola_h.yuv > inc/menu_cola_h.h
+xxd -i yuv/menu_param.yuv > inc/menu_param.h
+xxd -i yuv/menu_param_h.yuv > inc/menu_param_h.h
+xxd -i yuv/menu_upd.yuv > inc/menu_upd.h
+xxd -i yuv/menu_upd_h.yuv > inc/menu_upd_h.h
+xxd -i yuv/ret_err.yuv > inc/ret_err.h
+xxd -i yuv/ret_ok.yuv > inc/ret_ok.h
+xxd -i yuv/sep.yuv > inc/sep.h
+xxd -i yuv/tip.yuv > inc/tip.h
+xxd -i yuv/title_adv.yuv > inc/title_adv.h
+xxd -i yuv/title_colab.yuv > inc/title_colab.h
+xxd -i yuv/title_menu.yuv > inc/title_menu.h
+xxd -i yuv/title_param.yuv > inc/title_param.h
+xxd -i yuv/title_upg.yuv > inc/title_upg.h
+
