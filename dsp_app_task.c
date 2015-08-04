@@ -242,7 +242,11 @@ typedef enum _eMSG_TYPE {
 	MSG_UNKNOWN,
 } eMSG_TYPE;
 
-
+void * pVideoBuf_Synthesis = NULL;
+void * pVideoBuf_Front = NULL;
+void * pVideoBuf_Left = NULL;
+void * pVideoBuf_Right = NULL;
+void * pVideoBuf_Rear = NULL;
 
 #define __UI__
 
@@ -254,13 +258,21 @@ typedef enum _eMSG_TYPE {
  ******************************************************************************/	
 
 
-
+/*
 #define VIDEO_BUF_SYNTHESIS     (tpHandle.synthesisBuffer)
 #define VIDEO_BUF_LEFT          (pFrom_VPSS_M3_TempCmdMsg->pPointer1)
 #define VIDEO_BUF_RIGHT         (pFrom_VPSS_M3_TempCmdMsg->pPointer2)
 #define VIDEO_BUF_REAR          (pFrom_VPSS_M3_TempCmdMsg->pPointer3)
 #define VIDEO_BUF_FRONT          (pFrom_VPSS_M3_TempCmdMsg->pPointer0)
-#define VIDEO_BUF_CAR           (Carbox_80_240)
+*/
+
+#define VIDEO_BUF_SYNTHESIS     (pVideoBuf_Synthesis)
+#define VIDEO_BUF_LEFT          (pVideoBuf_Left)
+#define VIDEO_BUF_RIGHT         (pVideoBuf_Right)
+#define VIDEO_BUF_REAR          (pVideoBuf_Rear)
+#define VIDEO_BUF_FRONT         (pVideoBuf_Front)
+
+#define VIDEO_BUF_CAR           (yuv_car_yuv) //(Carbox_80_240)
 #define VIDEO_BUF_TIPBAR        (OSD_400_224)
 	 
 #define u16 unsigned short
@@ -340,18 +352,19 @@ typedef enum {
  * 子视图类型
  */
 typedef enum {
-	VIEW_SYSTHESIS = 0,
-	VIEW_CAR,
-	VIEW_SINGLEVIEW,
-	VIEW_TIPBAR,
-	VIEW_FULLSCREEN,
-	VIEW_SPLIT_00,	//上左
-	VIEW_SPLIT_01,	//上右
-	VIEW_SPLIT_10,	//下左
-	VIEW_SPLIT_11,	//下右
+	SUBVIEW_SYSTHESIS = 0,
+	SUBVIEW_CAR,
+	SUBVIEW_SINGLEVIEW,
+	SUBVIEW_TIPBAR,
+	SUBVIEW_FULLSCREEN,
+	SUBVIEW_SPLIT_00,	//上左
+	SUBVIEW_SPLIT_01,	//上右
+	SUBVIEW_SPLIT_10,	//下左
+	SUBVIEW_SPLIT_11,	//下右
+	SUBVIEW_MENU,
 	
-	VIEW_END,
-} eVIEW_TYPE;
+	SUBVIEW_END
+} eSUBVIEW;
 
 
 typedef struct {
@@ -384,6 +397,18 @@ typedef		enum
 	
 	PAGE_TYPE_END
 }	ePAGE_TYPE;
+
+typedef enum {
+	TITLE_MENU = 0,
+	TITLE_SETPARAM,
+	TITLE_UPD,
+	TITLE_COLABRATE,
+	TITLE_ADVFUNC,
+
+	TITLE_END,
+
+	TITLE_NON = 0xFF
+} eTITLE;
 
 
 //图标类型
@@ -430,12 +455,13 @@ typedef		struct
 
 }	tBUTTON;
 
+/*
 //标题栏
 typedef		struct
 {
 	void			*pSrc;										//数据源
 }	tTITLEBAR;
-
+*/
 
 //所有的项
 typedef enum {
@@ -471,7 +497,8 @@ typedef		struct
 {
 //	tVIEW*			pViews;										//视图			
 	eVIEWTYPE		eViewType;									//视图类型
-	tTITLEBAR*		pTitleBar;									//标题栏
+//	void*			pTitleBar;									//标题栏
+	eTITLE			eTitle;
 	tITEM*			pItems;										//项
 	tBUTTON*		pButtons;									//按钮
 
@@ -517,7 +544,7 @@ void	Show_Page(u8 u8PageType);
 void 	Show_View(eVIEWTYPE eViewType);
 
 //显示标题栏
-void 	Show_Title(void *pSrc);
+void 	Show_Title(eTITLE eTtitle);
 
 
 //显示单个列表
@@ -530,7 +557,7 @@ void	Show_Icon(void);
 void	Show_Button(u8 u8Page, u8 u8ButtonIndex, u8 u8ShowType);
 
 //将屏显缓区内一块点位区域输出到屏幕中对应区域显示
-void	BitBlt(tREGION *ptRegion, void *pSrc);
+void	BitBlt(eSUBVIEW eSubView, tREGION *ptRegion, void *pSrc);
 void	BitBlt_Raw(int win_startX, int win_startY, int win_Width, int win_Height, int crop_startX, int crop_startY, void *pSrc);
 
 
@@ -553,7 +580,7 @@ volatile tUIFSM					tUIFsm;	   			//屏状态机
 volatile tPAGE_CONTROL_FLOW		tPage_Flow;			//页面控制流
 
 
-static uint8_t	menu_Buf[466*480*2];
+static uint8_t	menu_Buf[466*480*2];	//菜单背景，黑色
 
 
 tPAGE		*pCurPage 		= NULL;							//当前页面指针
@@ -564,11 +591,11 @@ tPAGE		*pParentPage 	= NULL;							//父页面指针
  * 视图区域
  *
  */
-static tREGION aViewRegion[VIEW_END] = {
+tREGION aViewRegion[SUBVIEW_END] = {
 	{0, 0, 320, 480, 24, 0 },	//synthesis view
-	{120, 80, 80, 240, 0, 0 },	//car box
+	{120-24, 120, 80, 240, 0, 0 },	//car box
 	{270, 0, 736-270, 400, 90, 60 },	//single camera view
-	{320, 400, 400, 80, 0, 0 },	//Tip bar
+	{270, 400, 480, 80, 20, 0 },	//Tip bar
 	{0, 0, 736, 480, 0, 0 },   //full screen
 	{0, 0, 320, 240, 0, 0 },	//split
 	{320, 0, 736 - 320, 240, 0, 00 },	//split
@@ -576,11 +603,12 @@ static tREGION aViewRegion[VIEW_END] = {
 	{320, 240, 736 - 320, 240, 0, 0 },	//split
 };
 
+
 /*!
  * 显示定义
  *
  */
-#define	WIN_WITDTH				(736-320)	//466
+#define	WIN_WITDTH				(736-270)	//466
 #define	WIN_HEIGHT				480
 #define	WIN_START_X				270	//屏幕起始显示位置
 #define WIN_START_Y				0
@@ -629,7 +657,7 @@ typedef struct {
 	u16			height;			//高度
 } tPICYUV;
 
-#if 1
+#if 0
 extern const unsigned char yuv_menu_param_yuv[] ;
 extern const unsigned char yuv_menu_param_h_yuv[] ;
 extern const unsigned char yuv_menu_upd_h_yuv[] ;
@@ -659,35 +687,97 @@ extern const unsigned char yuv_sep_yuv[];
 extern const unsigned char yuv_car_yuv[];
 
 
-
 #endif
+
+typedef struct {
+	void*	pSrc;
+	int		width;
+	int		height;
+} tTITLE;
+
+static tTITLE	aTitle_YUV[TITLE_END];
+
 
 /*!
  * 列表项资源图片数组
  *
  */
-static tPICYUV aItem_YUV[ITEM_MENU_END] = {
-	{ yuv_menu_param_yuv, yuv_menu_param_h_yuv, 142, 54 },
-	{ yuv_menu_upd_h_yuv, yuv_menu_upd_h_yuv, 142, 54  },
-	{ yuv_menu_cola_yuv, yuv_menu_cola_h_yuv, 142, 54  },
-	{ yuv_menu_adv_yuv, yuv_menu_adv_h_yuv, 142, 54  },
-	{ yuv_colab_wp_yuv, yuv_colab_wp_h_yuv, 142, 42 },
-	{ yuv_colab_clb_yuv, yuv_colab_clb_h_yuv, 104, 42 },
+static tPICYUV aItem_YUV[ITEM_MENU_END];
 
-};
+static tPICYUV aBar_YUV;
 
-
-static tPICYUV aBar_YUV = { yuv_bar_yuv, yuv_bar_h_yuv };	//提示栏图片数组
 
 
 //屏初始化
 void	UI_Init(void)
 {
+	u32 i = 0;
+
+	aTitle_YUV[TITLE_MENU].pSrc = yuv_title_menu_yuv;
+	aTitle_YUV[TITLE_MENU].width = 142;
+	aTitle_YUV[TITLE_MENU].height = 54;
+	aTitle_YUV[TITLE_SETPARAM].pSrc = yuv_title_param_yuv;
+	aTitle_YUV[TITLE_SETPARAM].width = 142;
+	aTitle_YUV[TITLE_SETPARAM].height = 54;
+	aTitle_YUV[TITLE_UPD].pSrc = yuv_title_upg_yuv;
+	aTitle_YUV[TITLE_UPD].width = 142;
+	aTitle_YUV[TITLE_UPD].height = 54;
+	aTitle_YUV[TITLE_COLABRATE].pSrc = yuv_title_colab_yuv;
+	aTitle_YUV[TITLE_COLABRATE].width = 142;
+	aTitle_YUV[TITLE_COLABRATE].height = 54;
+	aTitle_YUV[TITLE_ADVFUNC].pSrc = yuv_title_adv_yuv;
+	aTitle_YUV[TITLE_ADVFUNC].width = 142;
+	aTitle_YUV[TITLE_ADVFUNC].height = 54;
+
+	aItem_YUV[ITEM_MENU_PARAM].pSrc_Normal = yuv_menu_param_yuv;
+	aItem_YUV[ITEM_MENU_PARAM].pSrc_Hilight = yuv_menu_param_h_yuv;
+	aItem_YUV[ITEM_MENU_PARAM].width = 142;
+	aItem_YUV[ITEM_MENU_PARAM].height = 54;
+	aItem_YUV[ITEM_MENU_UPD].pSrc_Normal = yuv_menu_upd_yuv;
+	aItem_YUV[ITEM_MENU_UPD].pSrc_Hilight = yuv_menu_upd_h_yuv;
+	aItem_YUV[ITEM_MENU_UPD].width = 142;
+	aItem_YUV[ITEM_MENU_UPD].height = 54;
+	aItem_YUV[ITEM_MENU_COLABRATION].pSrc_Normal = yuv_menu_cola_yuv;
+	aItem_YUV[ITEM_MENU_COLABRATION].pSrc_Hilight = yuv_menu_cola_h_yuv;
+	aItem_YUV[ITEM_MENU_COLABRATION].width = 142;
+	aItem_YUV[ITEM_MENU_COLABRATION].height = 54;
+	aItem_YUV[ITEM_MENU_ADVANCEDFUNC].pSrc_Normal = yuv_menu_adv_yuv;
+	aItem_YUV[ITEM_MENU_ADVANCEDFUNC].pSrc_Hilight = yuv_menu_adv_h_yuv;
+	aItem_YUV[ITEM_MENU_ADVANCEDFUNC].width = 142;
+	aItem_YUV[ITEM_MENU_ADVANCEDFUNC].height = 54;
+	aItem_YUV[ITEM_MENU_COLABRATION_WRITEPARAM].pSrc_Normal = yuv_colab_wp_yuv;
+	aItem_YUV[ITEM_MENU_COLABRATION_WRITEPARAM].pSrc_Hilight = yuv_colab_wp_h_yuv;
+	aItem_YUV[ITEM_MENU_COLABRATION_WRITEPARAM].width = 142;
+	aItem_YUV[ITEM_MENU_COLABRATION_WRITEPARAM].height = 54;
+	aItem_YUV[ITEM_MENU_COLABRATION_COLABRATE].pSrc_Normal = yuv_colab_clb_yuv;
+	aItem_YUV[ITEM_MENU_COLABRATION_COLABRATE].pSrc_Hilight = yuv_colab_clb_h_yuv;
+	aItem_YUV[ITEM_MENU_COLABRATION_COLABRATE].width = 142;
+	aItem_YUV[ITEM_MENU_COLABRATION_COLABRATE].height = 54;
+
+	aBar_YUV.pSrc_Normal = yuv_bar_yuv;
+	aBar_YUV.pSrc_Hilight = yuv_bar_h_yuv;
+	aBar_YUV.width = 316;
+	aBar_YUV.height = 4;
+
+
 	tUIFsm.u8PendingCommand = 0xFF;
 	tUIFsm.u8CurrentPage = PAGE_DEFAULT;
 	tUIFsm.bPageFresh = FALSE;
+
+
+
+
 	
+	//初始化页面
 	Init_Page();
+
+	//菜单背景填充黑色
+	while(i < ((466*480*2) - 1)) {
+		menu_Buf[i] = 0x10;
+		i++;
+		menu_Buf[i] = 0x80;
+		i++;
+	}
 }
 
 
@@ -726,44 +816,53 @@ void	Init_Page(void)
 	while( u8PageType < PAGE_TYPE_END )
 	{
 		pPage = &(tPage_Flow.aPage[u8PageType]);
+
+		memset((u8*)pPage, 0, sizeof(tPAGE));
 		
-		pPage->ePageType = u8PageType;
-//		pPage->pViews = aView[u8PageType];
-//		pPage->pItems = aItem[u8PageType];
+		pPage->ePageType = (ePAGE_TYPE)u8PageType;
 		
 		switch( u8PageType )
 		{
 			//视频显示页面
 		case	PAGE_FRONT:
 			pPage->eViewType = VIEW_FRONT;
+			pPage->eTitle = TITLE_NON;
 			break;
 		case	PAGE_FONT_FULL:
 			pPage->eViewType = VIEW_FONT_FULL;
+			pPage->eTitle = TITLE_NON;
 			break;
 		case	PAGE_LEFT:
 			pPage->eViewType = VIEW_LEFT;
+			pPage->eTitle = TITLE_NON;
 			break;
 		case	PAGE_LEFT_FULL:
 			pPage->eViewType = VIEW_LEFT_FULL;
+			pPage->eTitle = TITLE_NON;
 			break;
 		case	PAGE_RIGHT:
 			pPage->eViewType = VIEW_RIGHT;
+			pPage->eTitle = TITLE_NON;
 			break;
 		case	PAGE_RIGHT_FULL:
 			pPage->eViewType = VIEW_RIGHT_FULL;
+			pPage->eTitle = TITLE_NON;
 			break;
 		case	PAGE_REAR:
 			pPage->eViewType = VIEW_REAR;
+			pPage->eTitle = TITLE_NON;
 			break;
 		case	PAGE_REAR_FULL:
 			pPage->eViewType = VIEW_REAR_FULL;
+			pPage->eTitle = TITLE_NON;
 			break;
 		case	PAGE_AllVIEW:
 			pPage->eViewType = VIEW_AllVIEW;
+			pPage->eTitle = TITLE_NON;
 			break;
 		case	PAGE_MENU:	//菜单
 			pPage->eViewType = VIEW_MENU;
-			pPage->pTitleBar = yuv_title_menu_yuv;
+			pPage->eTitle = TITLE_MENU;
 			pPage->pItems = aItem[PAGE_MENU];
 			pPage->pButtons = NULL;
 			pPage->u8ButtonCnt = 0;
@@ -785,7 +884,7 @@ void	Init_Page(void)
 		case	PAGE_MENU_SETPARAM: 	//设置参数
 
 			pPage->eViewType = VIEW_MENU;
-			pPage->pTitleBar = yuv_title_param_yuv;
+			pPage->eTitle = TITLE_SETPARAM;
 			pPage->pItems = NULL;
 			pPage->pButtons = NULL;
 			pPage->u8ButtonCnt = 0;
@@ -797,7 +896,7 @@ void	Init_Page(void)
 		case	PAGE_MENU_UPG:			//升级
 
 			pPage->eViewType = VIEW_MENU;
-			pPage->pTitleBar = yuv_title_upg_yuv;
+			pPage->eTitle = TITLE_UPD;
 			pPage->pItems = NULL;
 			pPage->pButtons = NULL;
 			pPage->u8ButtonCnt = 0;
@@ -809,7 +908,7 @@ void	Init_Page(void)
 		case	PAGE_MENU_COLABRAT: 	//标定
 
 			pPage->eViewType = VIEW_MENU;
-			pPage->pTitleBar = yuv_title_colab_yuv;
+			pPage->eTitle = TITLE_COLABRATE;
 			pPage->pItems = aItem[PAGE_MENU_COLABRAT];
 			pPage->pButtons = NULL;
 			pPage->u8ButtonCnt = 0;
@@ -828,7 +927,7 @@ void	Init_Page(void)
 		case	PAGE_MENU_ADVANCEDFUNC:
 			
 			pPage->eViewType = VIEW_MENU;
-			pPage->pTitleBar = yuv_title_adv_yuv;
+			pPage->eTitle = TITLE_ADVFUNC;
 			pPage->pItems = NULL;
 			pPage->pButtons = NULL;
 			pPage->u8ButtonCnt = 0;
@@ -1382,8 +1481,8 @@ void	Show_Page(u8 u8PageType)
 		return;
 
 	//首先清除显存内容，填充底色
-	memset(menu_Buf, 0xFF, 466*480*2);
-	BitBlt_Raw(WIN_START_X, WIN_START_Y, WIN_WITDTH, WIN_HEIGHT, 0, 0, menu_Buf);
+//	memset(menu_Buf, 0xFF, 466*480*2);
+//	BitBlt_Raw(WIN_START_X, WIN_START_Y, WIN_WITDTH, WIN_HEIGHT, 0, 0, menu_Buf);
 
 	//得到当前页面指针
 	pPage = &(tPage_Flow.aPage[u8PageType]);
@@ -1392,9 +1491,9 @@ void	Show_Page(u8 u8PageType)
 	Show_View(pPage->eViewType);
 
 	//显示标题栏
-	if(pPage->pTitleBar != NULL)
+	if(pPage->eTitle != TITLE_NON)
 	{
-		Show_Title(pPage->pTitleBar->pSrc);
+		Show_Title(pPage->eTitle);
 	}
 	
 	//其他类型页面，显示项目
@@ -1429,9 +1528,89 @@ void	Show_Page(u8 u8PageType)
 			}
 		}
 	}
+
+    edmaWarpImgCpy4(myBopTaskCtxt.hEdma, (void *)(tpHandle.outputBuffer), (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer0),
+		736*2, 480, 736*2, 736*2);//liuxu, 06/17/2014.
 }
 
+#if 0
+/*!
+ * 显示视频画面
+ * \n
+ *
+ * @param eViewType
+ * \n
+ * @see
+ */
+void Show_View(eVIEWTYPE eViewType)
+{
+	//以下拼接显示画面Buffer后，DMA传输送交显示
+	tREGION *ptRegion;
 
+	ptRegion = &aViewRegion[eViewType];
+
+	switch(eViewType)
+	{
+	case	VIEW_FRONT:
+	case	VIEW_FONT_FULL:
+	case	VIEW_LEFT:
+	case	VIEW_LEFT_FULL:
+	case	VIEW_RIGHT:
+	case	VIEW_RIGHT_FULL:
+	case	VIEW_REAR:
+	case	VIEW_REAR_FULL:
+
+		//window 0: synthesis view
+		if(win_Width[0] != 0 && win_Height[0] != 0){
+			edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
+				(void *)(srcBuf[0] + 736 * 2 * crop_startY[0] + crop_startX[0] * 2),
+				(void *)(tpHandle.outputBuffer + win_startX[0] * 2 + 736 * 2 * win_startY[0]),
+				win_Width[0] *2, win_Height[0], 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
+		}
+		
+		//window 1: single camera view
+		if(win_Width[1] != 0 && win_Height[1] != 0){
+			edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
+				(void *)(srcBuf[1] + 736 * 2 * crop_startY[1] + crop_startX[1] * 2),
+				(void *)(tpHandle.outputBuffer + win_startX[1] * 2 + 736 * 2 * win_startY[1]),
+				win_Width[1] *2, win_Height[1], 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
+		}
+		//window 2: car box
+		if(win_Width[2] != 0 && win_Height[2] != 0){
+			edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
+				(void *)(srcBuf[2]	+ 736 * 2 * crop_startY[2] + crop_startX[2] * 2),
+				(void *)(tpHandle.outputBuffer + win_startX[2] * 2 + 736 * 2 * win_startY[2]),
+				win_Width[2] * 2, win_Height[2], win_Width[2] * 2, 736*2);//liuxu, 02/20/2014, for Y logo.
+		}
+
+		//window 3: osd
+		if(win_Width[3] != 0 && win_Height[3] != 0){
+			edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
+				(void *)(srcBuf[3] + 736 * 2 * crop_startY[3] + crop_startX[3] * 2),
+				(void *)(tpHandle.outputBuffer + win_startX[3] * 2 + 736 * 2 * win_startY[3] ),
+				win_Width[3] * 2, win_Height[3], 480*2, 736*2);//liuxu, 06/17/2014.
+		}
+
+	
+		break;		
+
+
+	case	VIEW_AllVIEW:
+		BitBlt(&aViewRegion[SUBVIEW_SPLIT_00], VIDEO_BUF_FRONT);
+		BitBlt(&aViewRegion[SUBVIEW_SPLIT_01], VIDEO_BUF_LEFT);
+		BitBlt(&aViewRegion[SUBVIEW_SPLIT_10], VIDEO_BUF_RIGHT);
+		BitBlt(&aViewRegion[SUBVIEW_SPLIT_11], VIDEO_BUF_REAR);
+ 		break;
+	case	VIEW_MENU:
+		BitBlt(&aViewRegion[SUBVIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
+		break;
+	default:
+		break;
+	}
+}
+#endif
+
+#if 1
 /*!
  * 显示视图页面
  * \n
@@ -1445,54 +1624,56 @@ void Show_View(eVIEWTYPE eViewType)
 	switch(eViewType)
 	{
 	case	VIEW_FRONT:
-		BitBlt(&aViewRegion[VIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
-		BitBlt(&aViewRegion[VIEW_CAR], VIDEO_BUF_CAR);
-		BitBlt(&aViewRegion[VIEW_SINGLEVIEW], VIDEO_BUF_FRONT);
-		BitBlt(&aViewRegion[VIEW_TIPBAR], VIDEO_BUF_TIPBAR);
+		BitBlt(SUBVIEW_SYSTHESIS, (tREGION*)&(aViewRegion[SUBVIEW_SYSTHESIS]), VIDEO_BUF_SYNTHESIS);
+		BitBlt(SUBVIEW_CAR, &aViewRegion[SUBVIEW_CAR], VIDEO_BUF_CAR);
+		BitBlt(SUBVIEW_SINGLEVIEW, &aViewRegion[SUBVIEW_SINGLEVIEW], VIDEO_BUF_FRONT);
+		BitBlt(SUBVIEW_TIPBAR, &aViewRegion[SUBVIEW_TIPBAR], VIDEO_BUF_TIPBAR);
 		break;
 	case	VIEW_FONT_FULL:
-		BitBlt(&aViewRegion[VIEW_FULLSCREEN], VIDEO_BUF_FRONT);
+		BitBlt(SUBVIEW_FULLSCREEN, &aViewRegion[SUBVIEW_FULLSCREEN], VIDEO_BUF_FRONT);
 		break;
 	case	VIEW_LEFT:
-		BitBlt(&aViewRegion[VIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
-		BitBlt(&aViewRegion[VIEW_CAR], VIDEO_BUF_CAR);
-		BitBlt(&aViewRegion[VIEW_SINGLEVIEW], VIDEO_BUF_LEFT);
-		BitBlt(&aViewRegion[VIEW_TIPBAR], VIDEO_BUF_TIPBAR);
+		BitBlt(SUBVIEW_SYSTHESIS, &aViewRegion[SUBVIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
+		BitBlt(SUBVIEW_CAR, &aViewRegion[SUBVIEW_CAR], VIDEO_BUF_CAR);
+		BitBlt(SUBVIEW_SINGLEVIEW, &aViewRegion[SUBVIEW_SINGLEVIEW], VIDEO_BUF_LEFT);
+		BitBlt(SUBVIEW_TIPBAR, &aViewRegion[SUBVIEW_TIPBAR], VIDEO_BUF_TIPBAR);
 		break;
 	case	VIEW_LEFT_FULL:
-		BitBlt(&aViewRegion[VIEW_FULLSCREEN], VIDEO_BUF_LEFT);
+		BitBlt(SUBVIEW_FULLSCREEN, &aViewRegion[SUBVIEW_FULLSCREEN], VIDEO_BUF_LEFT);
 		break;
 	case	VIEW_RIGHT:
-		BitBlt(&aViewRegion[VIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
-		BitBlt(&aViewRegion[VIEW_CAR], VIDEO_BUF_CAR);
-		BitBlt(&aViewRegion[VIEW_SINGLEVIEW], VIDEO_BUF_RIGHT);
-		BitBlt(&aViewRegion[VIEW_TIPBAR], VIDEO_BUF_TIPBAR);
+		BitBlt(SUBVIEW_SYSTHESIS, &aViewRegion[SUBVIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
+		BitBlt(SUBVIEW_CAR, &aViewRegion[SUBVIEW_CAR], VIDEO_BUF_CAR);
+		BitBlt(SUBVIEW_SINGLEVIEW, &aViewRegion[SUBVIEW_SINGLEVIEW], VIDEO_BUF_RIGHT);
+		BitBlt(SUBVIEW_TIPBAR, &aViewRegion[SUBVIEW_TIPBAR], VIDEO_BUF_TIPBAR);
  		break;
 	case	VIEW_RIGHT_FULL:
-		BitBlt(&aViewRegion[VIEW_FULLSCREEN], VIDEO_BUF_RIGHT);
+		BitBlt(SUBVIEW_FULLSCREEN, &aViewRegion[SUBVIEW_FULLSCREEN], VIDEO_BUF_RIGHT);
 		break;
 	case	VIEW_REAR:
-		BitBlt(&aViewRegion[VIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
-		BitBlt(&aViewRegion[VIEW_CAR], VIDEO_BUF_CAR);
-		BitBlt(&aViewRegion[VIEW_SINGLEVIEW], VIDEO_BUF_REAR);
-		BitBlt(&aViewRegion[VIEW_TIPBAR], VIDEO_BUF_TIPBAR);
+		BitBlt(SUBVIEW_SYSTHESIS, &aViewRegion[SUBVIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
+		BitBlt(SUBVIEW_CAR, &aViewRegion[SUBVIEW_CAR], VIDEO_BUF_CAR);
+		BitBlt(SUBVIEW_SINGLEVIEW, &aViewRegion[SUBVIEW_SINGLEVIEW], VIDEO_BUF_REAR);
+		BitBlt(SUBVIEW_TIPBAR, &aViewRegion[SUBVIEW_TIPBAR], VIDEO_BUF_TIPBAR);
 		break;
 	case	VIEW_REAR_FULL:
-		BitBlt(&aViewRegion[VIEW_FULLSCREEN], VIDEO_BUF_REAR);
+		BitBlt(SUBVIEW_FULLSCREEN, &aViewRegion[SUBVIEW_FULLSCREEN], VIDEO_BUF_REAR);
 		break;
 	case	VIEW_AllVIEW:
-		BitBlt(&aViewRegion[VIEW_SPLIT_00], VIDEO_BUF_FRONT);
-		BitBlt(&aViewRegion[VIEW_SPLIT_01], VIDEO_BUF_LEFT);
-		BitBlt(&aViewRegion[VIEW_SPLIT_10], VIDEO_BUF_RIGHT);
-		BitBlt(&aViewRegion[VIEW_SPLIT_11], VIDEO_BUF_REAR);
+//		BitBlt(SUBVIEW_SPLIT_00, &aViewRegion[SUBVIEW_SPLIT_00], VIDEO_BUF_FRONT);
+//		BitBlt(&aViewRegion[SUBVIEW_SPLIT_01], VIDEO_BUF_LEFT);
+//		BitBlt(&aViewRegion[SUBVIEW_SPLIT_10], VIDEO_BUF_RIGHT);
+//		BitBlt(&aViewRegion[SUBVIEW_SPLIT_11], VIDEO_BUF_REAR);
  		break;
 	case	VIEW_MENU:
-		BitBlt(&aViewRegion[VIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
+		BitBlt(SUBVIEW_SYSTHESIS, &aViewRegion[SUBVIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
+		BitBlt(SUBVIEW_CAR, &aViewRegion[SUBVIEW_CAR], VIDEO_BUF_CAR);
 		break;
 	default:
 		break;
 	}
 }
+#endif
 
 
 /*!
@@ -1533,7 +1714,7 @@ void	Show_Item(const u8 u8PageType, const u8 u8ItemIndex, u8 u8ShowType)
 	tRegion.crop_startX = 0;
 	tRegion.crop_startY = 0;
 	
-	BitBlt(&tRegion, pSrc);	
+	BitBlt(SUBVIEW_MENU, &tRegion, pSrc);	
 
 	/*!
 	 * 显示底条
@@ -1551,7 +1732,7 @@ void	Show_Item(const u8 u8PageType, const u8 u8ItemIndex, u8 u8ShowType)
 	tRegion.crop_startX = 0;
 	tRegion.crop_startY = 0;
 	
-	BitBlt(&tRegion, pSrc); 
+	BitBlt(SUBVIEW_MENU, &tRegion, pSrc); 
 
 
 	/*!
@@ -1569,7 +1750,7 @@ void	Show_Item(const u8 u8PageType, const u8 u8ItemIndex, u8 u8ShowType)
 		tRegion.crop_startX = 0;
 		tRegion.crop_startY = 0;
 		
-		BitBlt(&tRegion, pSrc); 
+		BitBlt(SUBVIEW_MENU, &tRegion, pSrc); 
 	}
 
 	/*!
@@ -1594,7 +1775,7 @@ void	Show_Item(const u8 u8PageType, const u8 u8ItemIndex, u8 u8ShowType)
 		tRegion.crop_startX = 0;
 		tRegion.crop_startY = 0;
 		
-		BitBlt(&tRegion, pSrc); 
+		BitBlt(SUBVIEW_MENU, &tRegion, pSrc); 
 	}
 }
 
@@ -1606,19 +1787,22 @@ void	Show_Item(const u8 u8PageType, const u8 u8ItemIndex, u8 u8ShowType)
  * \n
  * @see
  */
-void Show_Title(void *pSrc)
+void Show_Title(eTITLE eTitle)
 {
 	tREGION tRegion;
+
+	//刷新黑色背景
+	BitBlt_Raw(270, 0, 736-270, 480, 0,0, menu_Buf);
 
 	//显示标题栏
 	tRegion.win_startX = TITLE_WIN_START_X;
 	tRegion.crop_startY = TITLE_WIN_START_Y;
-	tRegion.win_Width = TITLE_WIDTH;
-	tRegion.win_Height = TITLE_HEIGHT;
+	tRegion.win_Width = 142;//aTitle_YUV[eTitle].width;
+	tRegion.win_Height = 54;//aTitle_YUV[eTitle].height;
 	tRegion.crop_startX = 0;
 	tRegion.crop_startY = 0;
 	
-	BitBlt(&tRegion, pSrc); 
+	BitBlt(SUBVIEW_MENU, &tRegion, yuv_title_menu_yuv);//aTitle_YUV[eTitle].pSrc);
 
 	//再显示分隔条
 
@@ -1629,7 +1813,7 @@ void Show_Title(void *pSrc)
 	tRegion.crop_startX = 0;
 	tRegion.crop_startY = 0;
 	
-	BitBlt(&tRegion, yuv_sep_yuv);
+	BitBlt(SUBVIEW_MENU, &tRegion, yuv_sep_yuv);
 }
 
 
@@ -1643,19 +1827,56 @@ void Show_Title(void *pSrc)
  * \n
  * @see
  */
-void	BitBlt(tREGION *ptRegion, void *pSrc)
+void	BitBlt(eSUBVIEW eSubView, tREGION *ptRegion, void *pSrc)
 {
 	if((ptRegion == NULL) || (pSrc == NULL))
 		return;
-	
-	edmaWarpImgCpy4(
-		myBopTaskCtxt.hEdma,
-		(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
-		(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY ),
-		ptRegion->win_Width * 2, 
-		ptRegion->win_Height, 
-		ptRegion->win_Width*2, 736*2
-		);//liuxu, 06/17/2014.
+
+	if((0 == ptRegion->win_Width) || (0 == ptRegion->win_Height))
+		return;
+
+	//window 0 : synthesis view
+	if(eSubView == SUBVIEW_SYSTHESIS) {
+		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
+			(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
+			(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY),
+			ptRegion->win_Width *2, ptRegion->win_Height, 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
+	}
+	//window 2: car box
+	else if(eSubView == SUBVIEW_CAR) {
+		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
+			(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
+			(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY),
+			ptRegion->win_Width *2, ptRegion->win_Height, ptRegion->win_Width*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
+	}
+	//window 1: single camera view
+	else if(eSubView == SUBVIEW_SINGLEVIEW) {
+		//window 1: single camera view
+		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
+			(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
+			(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY),
+			ptRegion->win_Width *2, ptRegion->win_Height, 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
+	}
+	else if(eSubView == SUBVIEW_FULLSCREEN) {
+		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
+			(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
+			(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY),
+			ptRegion->win_Width *2, ptRegion->win_Height, 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
+	}
+	//window 3: osd
+	else if(eSubView == SUBVIEW_TIPBAR) {
+		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
+			(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
+			(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY),
+			ptRegion->win_Width *2, ptRegion->win_Height, 480*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
+	}
+	else {
+		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
+			(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
+			(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY),
+			ptRegion->win_Width *2, ptRegion->win_Height, ptRegion->win_Width*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
+
+	}
 }
 
 
@@ -1973,6 +2194,42 @@ inline void INVALIDATE_DSP_CACHE()
 	while((L1PINV & 1)!=0);
 }
 
+#if 1
+static void layoutChange(int layoutid, cfg4Pointers_t *pFrom_VPSS_M3_TempCmdMsg)
+{
+//		static int curLayoutId = MSG_FRONT;
+
+		pVideoBuf_Synthesis = tpHandle.synthesisBuffer;
+
+		pVideoBuf_Front = pFrom_VPSS_M3_TempCmdMsg->pPointer0;  ///前视
+		pVideoBuf_Left = pFrom_VPSS_M3_TempCmdMsg->pPointer1;	///左视
+		pVideoBuf_Right = pFrom_VPSS_M3_TempCmdMsg->pPointer2;	///右视
+		pVideoBuf_Rear = pFrom_VPSS_M3_TempCmdMsg->pPointer3;	///后视
+
+		switch(layoutid) {
+			case	0:
+				tUIFsm.u8CurrentPage = PAGE_FRONT;
+				break;
+			case	1:
+				tUIFsm.u8CurrentPage = PAGE_LEFT;
+				break;
+			case	2:
+				tUIFsm.u8CurrentPage = PAGE_RIGHT;
+				break;
+			case	3:
+				tUIFsm.u8CurrentPage = PAGE_REAR;
+				break;
+			case	4:
+				tUIFsm.u8CurrentPage = PAGE_MENU;
+				break;
+			default:
+				break;
+		}
+
+}
+#endif
+
+#if 0
 /*************************************************************************
  *  @func       INVALIDATE_DSP_CACHE
  *
@@ -2033,11 +2290,11 @@ static void layoutChange(int layoutid, cfg4Pointers_t *pFrom_VPSS_M3_TempCmdMsg)
 	else if(curLayoutId == 2)		srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer2;
 	else if(curLayoutId == 3)		srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer3;
 	else		srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer0;
-
+#endif
 
 	srcBuf[2] = yuv_car_yuv;//Carbox_80_240;
 	srcBuf[3] = OSD_400_224;
-#endif
+
 
 	/*
 	 * test
@@ -2064,10 +2321,10 @@ static void layoutChange(int layoutid, cfg4Pointers_t *pFrom_VPSS_M3_TempCmdMsg)
 	System_printf(" [DSP]: view curLayoutId = %d ", curLayoutId);
 
 
-#if 1
+#if 0
 	if(curLayoutId == MSG_FRONT) {
 //		memset((void *)tpHandle.outputBuffer, 0x19, 736*480*2);
-		memset((void *)menu_Buf, 0x10, 466*480*2);
+//		memset((void *)menu_Buf, 0x10, 466*480*2);
 //		前摄像头全屏显示
 		//synthesis image
 		win_startX[0] = 0,win_startY[0] = 0,win_Width[0] = 320,win_Height[0] = 480;
@@ -2263,10 +2520,9 @@ static void layoutChange(int layoutid, cfg4Pointers_t *pFrom_VPSS_M3_TempCmdMsg)
 		System_printf("error! unknown cmd %d", curLayoutId);
 	}
 
-
-
-
 }
+#endif
+
 
 /*************************************************************************
  *  @func       GenColorBarToMemory
@@ -2508,7 +2764,7 @@ void A8CommTask(UArg arg0, UArg arg1)
             mutualTaskCmdMsg.pY_Pointer0 = NULL;
 
             ChInfoFromA8 = (pFrom_A8_TempCmdMsg_intask->cmdType & 0xFFFF);//liuxu, 06/19/2014, add info channel among of A8 to DSP/M3.
-            tUIFsm.u8PendingCommand = ChInfoFromA8;
+//            tUIFsm.u8PendingCommand = ChInfoFromA8;
         } else  {
             Task_sleep(1u);
         }
@@ -2772,8 +3028,14 @@ Void dspAppTask(UArg arg0, UArg arg1)
         	outTmpbuf =(unsigned char*)0x87300000;//liuxu, 11/12/2013, hard memory for output frame, according to 128MB memory layout, 11/21/2013, 0x87000000 to 0x87200000 is for DSP_HEAP.
         #endif
 
+		//初始化页面
+        UI_Init();
+
          /*determine which layout to use at the first time*/
         layoutChange(0, pFrom_VPSS_M3_TempCmdMsg);
+
+		//显示默认页面
+//		Show_Page(tUIFsm.u8CurrentPage);
 
         while(1)
         {
@@ -2868,7 +3130,7 @@ Void dspAppTask(UArg arg0, UArg arg1)
             profiletick1_task = _TSC_read();
 
 
-///            layoutChange(ChInfoFromA8,pFrom_VPSS_M3_TempCmdMsg);//界面布局切换的话，调整界面布局
+            layoutChange(ChInfoFromA8,pFrom_VPSS_M3_TempCmdMsg);//界面布局切换的话，调整界面布局
 ///- gzd            if(ChInfoFromA8 == 4) {
 ///-gzd             	InfoSwmsLayout = 4;
 ///+gzd 原来是按键次数 = 4时，同时显示四路，现在改为按键第7次按下，也就是最后一个界面，是四路同时显示
@@ -2885,10 +3147,22 @@ Void dspAppTask(UArg arg0, UArg arg1)
  * 自定义界面框架
  */
 
-            	Show_Page(tUIFsm.u8CurrentPage);
-				if(tUIFsm.u8PendingCommand != 0xFF) {
-					UI_Key_Process(tUIFsm.u8PendingCommand);
-				}
+#if 1
+//				Show_Page(tUIFsm.u8CurrentPage);
+				Show_Title(TITLE_MENU);
+
+//				Show_View(VIEW_FRONT);
+edmaWarpImgCpy4(myBopTaskCtxt.hEdma, (void *)(tpHandle.outputBuffer), (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer0),
+		736*2, 480, 736*2, 736*2);//liuxu, 06/17/2014.
+
+
+
+//				if(tUIFsm.u8PendingCommand != 0xFF) {
+//					UI_Key_Process(tUIFsm.u8PendingCommand);
+//					tUIFsm.u8PendingCommand = 0xFF;
+//				}
+#endif
+
 #if 0
             	//以下拼接显示画面Buffer后，DMA传输送交显示
             	//window 0 : synthesis view
@@ -2922,7 +3196,7 @@ Void dspAppTask(UArg arg0, UArg arg1)
                 		win_Width[3] * 2, win_Height[3], 480*2, 736*2);//liuxu, 06/17/2014.
                 }
 
-
+#if 0
               //window 4: 自定义界面
                 if(win_Width[4] != 0 && win_Height[4] != 0){
 //            		memset((void *)tpHandle.outputBuffer, 0x80, 736*480*2); //填充黑色，这个是灰色，待调
@@ -2956,10 +3230,8 @@ Void dspAppTask(UArg arg0, UArg arg1)
                 		(void *)(srcBuf[8] + 736 * 2 * crop_startY[8] + crop_startX[8] * 2),
                 		(void *)(tpHandle.outputBuffer + win_startX[8] * 2 + 736 * 2 * win_startY[8] ),
                 		win_Width[8] * 2, win_Height[8], win_Width[8]*2, 736*2);//liuxu, 06/17/2014.
-
-
-                }
-
+               }
+#endif
                 edmaWarpImgCpy4(myBopTaskCtxt.hEdma, (void *)(tpHandle.outputBuffer), (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer0),
                 		736*2, 480, 736*2, 736*2);//liuxu, 06/17/2014.
 
