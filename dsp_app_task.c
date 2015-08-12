@@ -1,301 +1,101 @@
-/*!
- * @file    dsp_app_task.c
- * @brief
+/*
+ * Copyright (c) 2012, Texas Instruments Incorporated
+ * All rights reserved.
  *
- * \n
- * @details
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
  *
- * \n
- * @version 
- * @author  gzd
- * @date    2015-7-25
+ * *  Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
  *
- * @history
+ * *  Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * *  Neither the name of Texas Instruments Incorporated nor the names of
+ *    its contributors may be used to endorse or promote products derived
+ *    from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+ * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*
+ *  ======== main_host.c ========
  *
  */
 
-/*******************************************************************************
- *                                                                             *
- * Copyright (c) 2011 Texas Instruments Incorporated - http://www.ti.com/      *
- *                        ALL RIGHTS RESERVED                                  *
- *                                                                             *
- *=============================================================================*
- *
- *  File: dsp_app_task.c
- *
- ******************************************************************************/
-/*
- *   @file  dsp_app_task.c
- *
- *   @brief +
- */
+/* cstdlib header files */
 #include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>//liuxu, 12/19/2013.
+
+//liuxu, 8/21/2013, for mpeg4 encoder.
+#define IVI_GETTIME		// enable IviGetTime() in IviTypedef.h
+#include <math.h>
+#include <time.h>
 #include <string.h>
-#include <xdc/std.h>
-#include <xdc/runtime/System.h>
 
-#include <ti/ipc/Ipc.h>
-#include <ti/sysbios/BIOS.h>
-#include <ti/sysbios/knl/Task.h>
-#include <ti/sysbios/knl/Clock.h>
-#include <ti/sysbios/hal/Cache.h>//liuxu, 10/18/2013, open cache operations.
-#include <ti/sysbios/knl/Swi.h>//liuxu, 02/14/2014, manupliate swi.
+#include "IviTypedef.h"//liuxu, 02/12/2014, for "IviGetTime()".
 
-#include "error_codes.h"
-#include "common_defs.h"
-#include "slave_task_mgr.h"
-#include "shared_mem_cfg.h"
+//#define LEGACY_MAIN   ///原来的main
+#define NEW_MAIN
+//#define INPUT_PAR "MP4Enc.cfg"
+//#define MPEG4_ENCODER//liuxu, 8/21/2013, enable this mpeg4 encoder function.
 
-#include <c6x.h>//liuxu, 02/10/2014, add for profile.
-#include "ti_logo.h"//liuxu, 02/20/2014, add ti logo in ti dsp processing.
-#include "osd_array.h";//liuxu, 06/03/2014, add for osd and car box yuv420.
-#include "carbox_array.h";
+#ifdef MPEG4_ENCODER
+#include <pthread.h>//liuxu, 12/19/2013, creat a seperated thread for mpeg4 encoding.
+#include "MP4VEncSP.h"
+#include "ParaParser.h"
+#include "IviTypedef.h"
+#include "IviReturn.h"
+#endif 
+/* package header files */
+#include <ti/syslink/Std.h>     /* must be first */
+#include <ti/syslink/IpcHost.h>
+#include <ti/syslink/SysLink.h>
 
-#include "ti_srv_lib.h"
-#include "../utility/remote_debug_if.h"//liuxu, 04/23/2014, important ot clarify firstly.
-#include "../drivers/spi/spi_flash.h"
+#include <ti/ipc/MultiProc.h>
 
+#include <ti/ipc/HeapBufMP.h>//liuxu, 8/20/2013.
+#include <ti/ipc/MessageQ.h>//liuxu, 8/20/2013.
+//#include <xdc/runtime/IHeap.h>
+#include <ti/ipc/SharedRegion.h> 
+#include <ti/syslink/utils/Cache.h>//liuxu, 8/20/2013.
+#include <ti/syslink/utils/IHeap.h>//liuxu, 8/20/2013.
 
+#define SYSLINK_TRACE_ENABLE//liuxu, 8/19/2013.
 
-#include "bop.h"
-#include "slave_task_mgr_priv.h"
-#include "command_queue.h"
-#include <ti/ipc/SharedRegion.h>
-//volatile int gOneframedone;
+#include <ti/syslink/utils/Trace.h>//liuxu, 8/19/2013.
 
+/* local header files */
+#include "App.h"
 
-
-#include "bar.h"
-#include "bar_h.h"
-#include "car.h"
-#include "colab_clb.h"
-#include "colab_clb_h.h"
-#include "colab_wp.h"
-#include "colab_wp_h.h"
-#include "menu_adv.h"
-#include "menu_adv_h.h"
-#include "menu_cola.h"
-#include "menu_cola_h.h"
-#include "menu_param.h"
-#include "menu_param_h.h"
-#include "menu_upd.h"
-#include "menu_upd_h.h"
-#include "ret_err.h"
-#include "ret_ok.h"
-#include "sep.h"
-#include "tip.h"
-#include "title_adv.h"
-#include "title_colab.h"
-#include "title_menu.h"
-#include "title_param.h"
-#include "title_upg.h"
+//#define CARIT_KEY			///使用开发板按键
+#define A8_MCU_COMM_UART  	///+ gzd, 20150520 核心板与底板通信串口
 
 
-//enabling this macro, DSP will send command to itself, so that algorithm read image datas from DDR, turning it on
-//when there is no real camera for customer to develop algorithm.
-//#define TALK_TO_SELF
+#ifdef CARIT_KEY
+	static void CaritBoardKeyProc(void);
+	int CreateCaritKeyboardProcThread(void);
 
-//DSP to A8 communication in seperated task other than the main dspAppTask task.
-#define A8_CommInTask
-
-//currently only YUV422 is enabled
-#define RGBp				0
-#define RGBi				0
-#define YUV420p             0
-#define YUV420sp            0
-#define YUV422i             1
-
-/* DSP L1 and L2 cache registers. */
-#define MAR64  *(unsigned int*)0x01848100//liuxu, 11/14/2013.
-
-#define MAR128  *(unsigned int*)0x01848200
-#define MAR129  *(unsigned int*)0x01848204
-#define MAR130  *(unsigned int*)0x01848208
-#define MAR131  *(unsigned int*)0x0184820c
-#define MAR132  *(unsigned int*)0x01848210
-#define MAR133  *(unsigned int*)0x01848214
-#define MAR134  *(unsigned int*)0x01848218
-#define MAR135  *(unsigned int*)0x0184821c
-#define MAR136  *(unsigned int*)0x01848220
-#define MAR137  *(unsigned int*)0x01848224
-#define MAR138  *(unsigned int*)0x01848228
-#define MAR139  *(unsigned int*)0x0184822c
-#define MAR140  *(unsigned int*)0x01848230
-#define MAR141  *(unsigned int*)0x01848234
-#define MAR142  *(unsigned int*)0x01848238
-#define MAR143  *(unsigned int*)0x0184823c
-#define MAR144  *(unsigned int*)0x01848240
-#define MAR192  *(unsigned int*)0x01848300
-
-#define L2CFG  *((volatile unsigned int *)(0x01840000))
-#define L1PCFG *((volatile unsigned int *)(L2CFG + 0x20))
-#define L1DCFG *((volatile unsigned int *)(L2CFG + 0x40))
-
-#define L1DWB  *((volatile unsigned int *)(0x01845040))//liuxu, 10/18/2013.
-#define L2WB  *((volatile unsigned int *)(0x01845000))//liuxu, 10/18/2013.
-#define L1PINV  *((volatile unsigned int *)(0x01845028))//liuxu, 10/18/2013.
-
-#define MAR155  *(unsigned int*)0x0184826C//liuxuliuxu
-
-#define MAR145  *(unsigned int*)0x01848244//liuxu, 01/22/2014, China port. Memory Attribute Register 145 9100 0000h - 91FF FFFFh
-
-#define MAR146  *(unsigned int*)0x01848248//liuxu, 01/22/2014, China port. Memory Attribute Register 146 9200 0000h - 92FF FFFFh
-#define MAR147  *(unsigned int*)0x0184824C//liuxu, 01/22/2014, China port. Memory Attribute Register 147 9300 0000h - 93FF FFFFh
-#define MAR148  *(unsigned int*)0x01848250//liuxu, 01/22/2014, China port. Memory Attribute Register 148 9400 0000h - 94FF FFFFh
-#define MAR149  *(unsigned int*)0x01848254//liuxu, 01/22/2014, China port. Memory Attribute Register 149 9500 0000h - 95FF FFFFh
-#define MAR150  *(unsigned int*)0x01848258//liuxu, 01/22/2014, China port. Memory Attribute Register 150 9600 0000h - 96FF FFFFh
-
-#define debug_mem (*(volatile int *)(0x86ffff00))//liuxu, 11/19/2013, only 256 bytes for debug.
-#define debug_mem2_iput (*(volatile int *)(0x86ffff04))
-#define debug_mem3_iget (*(volatile int *)(0x86ffff08))
-
-#ifndef CONFIG_SF_DEFAULT_SPEED
-#define CONFIG_SF_DEFAULT_SPEED    1000000
+	static pthread_t keyProc_threadid;
+	static int fd_gpio = 0;
 #endif
-#ifndef CONFIG_SF_DEFAULT_MODE
-#define CONFIG_SF_DEFAULT_MODE            SPI_MODE_3
-#endif
-
-#define CM_ALWON_SPI_CLKCTRL		0x08181590//liuxu, 06/18/2014, dsp has different view to A8.
-#define SRV_PARAM_START_ADDR		0x100000
-#define SRV_PARAM_END_ADDR		0x200000
-
-/*
- * By enabling ENABLE_SINGLE_VIEW_FD Macro in function TI_dsp_Processing (dsp_app_task.c), user can do
- * fisheye distortion correction on single view.Which is split into two stage, the 1st stage is to allocate
- * memory to hold the lut which describe how distortion corrected pixel should be located in original view,
- * the 2nd stage is to apply the LUT during pixel processing.
- */
-#define ENABLE_SINGLE_VIEW_FD 0
-
-/*******************************************************************************
- *                           global variables                                 *
- ******************************************************************************/
-
-#ifdef A8_CommInTask
-
-#define TI_DSP_ALG//liuxu, 02/12/2014, disable temporarily//liuxu, 02/11/2014.
-//#define TWO_TASKS_SLEEP
-
-cfg8Pointers_t mutualTaskCmdMsg;
-int firstSetOfFramesReady = 0;
-int ToProcessOneSet = 0;
-int DoneProcessedOneSet = 0;
-
-unsigned int mySentToA8Counter = 0;
-unsigned short int ChInfoFromA8 = 0xFFFF;//liuxu, 06/19/2014, info from A8.
-unsigned short int InfoSwmsLayout = 0;//liuxu, 06/19/2014, info to M3.
-
-#endif
-
-unsigned int badcounter = 0;//liuxu, 06/05/2014, stats the percentage of non 40ms for PAL.
-int debugStopFlag = 0;// for ccs debug from the most beinning
-
-int win_startX[20] ,win_startY[20] ,win_Width[20] ,win_Height[20], crop_startX[20] ,crop_startY[20];
-void *srcBuf[20], *dstBuf[20];
-
-uint32_t gEdma_ChId, gTcc;//liuxu, 11/12/2013, use edma for simple srv demo.
-//Semaphore_Handle hSemaCpyDone;
-//liuxu, 02/11/2014, use queue1 for ti dsp. #define FOUR_IN_ONE_D1//liuxu, 12/19/2013.
-bopCtxt_t               myBopTaskCtxt;//liuxu, 11/12/2013.
-
-//static Word32 persmatin[] = {1168548, 4691, -29928995, 7274, 2387337, -4112491, -9513, 325, 1048576, 3430890, 83407, 69132337, -221228, 3112890, 115834630, 1160, 2661, 1048576, 1465549, 2723, 51888110, 21501, 2237038, -881129, 7046, -332, 1048576, 3454702, -295296, 104147669, 99852, 2952685, -114814057, 600, -2875, 1048576};
-Word32 persmatin[] = {1131601, 81042, 7261885, -38166, 1464216, -22484589, -2277, 823, 1048576, 1782065,
-					  -118325, -61070805, -39328, 1583282, 109851828, 717, -707, 1048576, 962336, -67172,
-					  1721768, 24735, 1384077, -6917033, 3589, 251, 1048576, 1580675, 171120, -27832885,
-					  -36117, 1451835, -65973417, 779, -513, 1048576};
-
-//FengJing Camera
-//unsigned int VendorLUTin[] = {0,1689,3377,5063,6817,8424,10098,11765,13487,15075,16716,18346,19964,21569,23159,24733,26290,27829,29348,30846,32323,33777,35207,36613,37993,39348,40676,41978,43252,44499,45719,46911,48076,49214,50324,51408,52465,53496,54502,55482,56437,57368,58276,59160,60021,60860,61678,62474,63251,64007,64743,65461,66161,66842,67507,68155,68786,69401,70002,70587,71158,71715,72258,72788,73306,73811,74304,74785,75255,75715,76163,76601,77029,77448,77857,78257,78648,79030,79404,79770,80128,80478,80821,81157,81485,81807,82122,82431,82733,83030,83320,83605,83884,84157,84426,84689,84947,85200,85448,85692,85931,86165,86396,86622,86844,87062,87276,87487,87694,87897,88096,88292,88485,88675,88861,89044,89225,89402,89576,89748,89916,90082,90246,90406,90565,90720,90874,91025,91173,91320,91464,91606,91746,91884,92019,92153,92285,92415,92543,92669,92794,92916,93037,93156,93274,93390,93504,93617,93729,93838,93947,94054,94159,94263,94366,94467,94568,94666,94764,94860,94955,95049,95142,95234,95324,95413,95502,95589,95675,95760,95844,95927,96009,96091,96171,96250,96328,96406,96482,96558,96633,96707,96780,96852,96924,96995,97065,97134,97202,97270,97337,97403,97469,97534,97598,97661,97724,97786,97848,97909,97969,98029,98088,98146,98204,98262,98318,98374,98430,98485,98540,98594,98647,98700,98752,98804,98856,98907,98957,99007,99057,99106,99155,99203,99250,99298,99345,99391,99437,99483,99528,99573,99617,99661,99705,99748,99791,99833,99875,99917,99958,99999,100040,100080,100120,100160,100199,100238,100277,100315,100353,100391,100428,100466,100502,100539/*,100575,100611,100647,100682,100717,100752,100786,100820,100854,100888,100922,100955,100988*/};
-unsigned int VendorLUTin[] = {0,2018,3972,5981,7914,9897,11862,13805,15776,17682,19601,21457,23339,25198,27039,28808,30589,32348,34089,35782,37428,39092,40709,42279,43805,45478,46785,48243,49677,51072,52432,53791,55050,56333,57574,58774,59936,61126,62214,63333,64418,65470,66491,67482,68443,69377,70343,71228,72083,72978,73786,74634,75399,76205,76927,77694,78378,79108,79803,80457,81132,81778,82380,83013,83597,84174,84754,85282,85850,86406,86893,87418,87884,88395,88890,89316,89791,90206,90647,91093,91508,91890,92309,92718,93087,93446,93830,94207,94551,94873,95228,95575,95911,96204,96513,96835,97115,97395,97699,97998,98291,98553,98801,99075,99347,99616,99880,100107,100330,100579,100825,101041,101250,101474,101704,101920,102115,102308,102524,102736,102946,103152,103355,103529,103701,103880,104071,104259,104431,104591,104749,104920,105095,105267,105422,105569,105713,105867,106028,106186,106337,106472,106606,106737,106867,106995,107121,107250,107391,107530,107667,107794,107911,108027,108141,108261,108388,108514,108637,108755,108861,108966,109070,109172,109273,109373,109472,109569,109669,109778,109885,109992,110097,110197,110287,110376,110464,110551,110637,110723,110807,110891,110973,111055,111136,111216,111295,111373,111451,111527,111612,111698,111783,111867,111950,112032,112108,112179,112249,112318,112387,112455,112522,112589,112655,112721,112786,112850,112913,112977,113039,113101,113162,113223,113283,113343,113402,113460,113518,113576,113633,113689,113745,113801,113856,113911,113964,114018,114071,114123,114176,114227,114278,114329,114380,114430,114479,114529,114577,114626,114674,114722,114769,114816,114862,114908,114954,115000,115045,115089,115134,115178,115221,115265,115307,115350,115392,115434,115476,115517,115558,115599,115640,115680,115719,115759,115798,115837,115876};
-//unsigned int ProfileClockticks = 0;
-
-Byte *memRearCamAfterFishEyeCorrection;
-
-static volatile cfg4Pointers_t *pFrom_VPSS_M3_TempCmdMsg = NULL_VALUE;
-static volatile cfg4Pointers_t *pDSP_To_VPSS_M3_TempCmdMsg = NULL_VALUE;
-static volatile cfg4Pointers_t *pFrom_A8_TempCmdMsg = NULL_VALUE;
-static volatile cfg8Pointers_t *pDSP_To_A8_TempCmdMsg = NULL_VALUE;//liuxuliuxu, 8/20/2013. //liuxu, 10/5/2013. 
-static volatile cfg8Pointers_t *pFrom_VPSS_M3_TempCmdMsg2 = NULL_VALUE;//liuxuliuxu, 8/8/2013, for DSP EDMA downscale and encoder.
-
-
-
-typedef enum _eMSG_TYPE {
-	MSG_FRONT = 0,		/*方向前*/
-	MSG_FRONT_FULLVIEW,	/*方向前-全屏*/
-	MSG_LEFT,			/*方向左*/
-	MSG_LEFT_FULLVIEW,	/*方向左-全屏*/
-	MSG_RIGHT,   		/*方向右*/
-	MSG_RIGHT_FULLVIEW,	/*方向右-全屏*/
-	MSG_REAR,			/*倒车*/
-	MSG_ALLVIEW,		/*四路视频同时显示*/
-	MSG_SNAPSHOT,	/*标定-摄像头拍照*/
-	MSG_CALIBRATING,	/*标定-读取标定参数送给DSP*/
-	MSG_SLEEP,			/*休眠*/
-	MSG_MENU_BACK,		/*遥控器消息：返回*/
-	MSG_MENU_LEFT,	/*遥控器消息：左*/
-	MSG_MENU_RIGHT,	/*遥控器消息：右*/
-	MSG_MENU_UP,	/*遥控器消息：上*/
-	MSG_MENU_DOWN,	/*遥控器消息：下*/
-	MSG_MENU_OK,	/*遥控器消息：确定*/
-	MSG_MENU_POWER,/*遥控器消息：电源*/
-	MSG_UNKNOWN,
-} eMSG_TYPE;
-
-void * pVideoBuf_Synthesis = NULL;
-void * pVideoBuf_Front = NULL;
-void * pVideoBuf_Left = NULL;
-void * pVideoBuf_Right = NULL;
-void * pVideoBuf_Rear = NULL;
-
-#define __UI__
-
-#ifdef __UI__
-/*******************************************************************************
- *
- * 自定义界面显示框架
- *
- ******************************************************************************/	
-
-
-/*
-#define VIDEO_BUF_SYNTHESIS     (tpHandle.synthesisBuffer)
-#define VIDEO_BUF_LEFT          (pFrom_VPSS_M3_TempCmdMsg->pPointer1)
-#define VIDEO_BUF_RIGHT         (pFrom_VPSS_M3_TempCmdMsg->pPointer2)
-#define VIDEO_BUF_REAR          (pFrom_VPSS_M3_TempCmdMsg->pPointer3)
-#define VIDEO_BUF_FRONT          (pFrom_VPSS_M3_TempCmdMsg->pPointer0)
-*/
-
-#define VIDEO_BUF_SYNTHESIS     (pVideoBuf_Synthesis)
-#define VIDEO_BUF_LEFT          (pVideoBuf_Left)
-#define VIDEO_BUF_RIGHT         (pVideoBuf_Right)
-#define VIDEO_BUF_REAR          (pVideoBuf_Rear)
-#define VIDEO_BUF_FRONT         (pVideoBuf_Front)
-
-#define VIDEO_BUF_CAR           (yuv_car_yuv) //(Carbox_80_240)
-#define VIDEO_BUF_TIPBAR        (OSD_400_224)
-	 
-#define u16 unsigned short
-#define u8 unsigned char
-#define u32 unsigned int
-
-/*
- * 显示区域
- */
-typedef struct {
-	int win_startX;
-	int win_startY;
-	int win_Width;
-	int win_Height;
-	int crop_startX;
-	int crop_startY;
-	
-} tREGION;
-
 
 /*按键类型*/
-typedef enum {	
-	KEY_ACC = 0,//ACC 
+typedef enum {
+	KEY_ACC = 0,//ACC
 	KEY_FRONT,	//前视
 	KEY_LEFT,	//左视
 	KEY_RIGHT,	//右转
@@ -309,3440 +109,3651 @@ typedef enum {
 	MENU_OK,	//确定
 	MENU_POWER,	//电源
 	KEY_END,
-	
+
 	KEY_UNKNOWN = 0xFF	//未知
 } eKEYTYPE;
 
-
-#define		_SCREEN_PIXEL_WIDTH_			736					//屏的宽度
-#define		_SCREEN_PIXEL_HEIGHT_			480					//屏的高度
-#define		_ITEM_PIXEL_HEIGHT_				100					//屏的高度
-
-//屏显
-#define		_PAGE_MAX_ROW_					4					//每页最大显示行数
-#define		_PAGE_MAX_COLUMN_				16					//每页最大列数
-
-#define		_BUTTON_WIDTH_1_X_				16					//16个像素
-#define		_BUTTON_WIDTH_2_X_				32					//32个像素
-
-
-#define 	VISIABLE			1	//可见
-#define 	INVISIABLE			0	//隐藏
-
-/*!
- * 视图类型
- *
- */
-typedef enum {
-	VIEW_FRONT = 0,
-	VIEW_FONT_FULL,
-	VIEW_LEFT,
-	VIEW_LEFT_FULL,
-	VIEW_RIGHT,
-	VIEW_RIGHT_FULL,
-	VIEW_REAR,
-	VIEW_REAR_FULL,
-	VIEW_AllVIEW,
-	VIEW_MENU
-
-} eVIEWTYPE;
-
-
-/*
- * 子视图类型
- */
-typedef enum {
-	SUBVIEW_SYSTHESIS = 0,
-	SUBVIEW_CAR,
-	SUBVIEW_SINGLEVIEW,
-	SUBVIEW_TIPBAR,
-	SUBVIEW_FULLSCREEN,
-	SUBVIEW_SPLIT_00,	//上左
-	SUBVIEW_SPLIT_01,	//上右
-	SUBVIEW_SPLIT_10,	//下左
-	SUBVIEW_SPLIT_11,	//下右
-	SUBVIEW_MENU,
-	
-	SUBVIEW_END
-} eSUBVIEW;
-
-
-typedef struct {
-	eVIEWTYPE	eType;
-	void*		pSrc;		//显示源，两种：视频源，图片数组
-	u8			bVisable;
-} tVIEW;
-
-
-
-#define PAGE_DEFAULT 	PAGE_FRONT	//默认页面为前视
-
-//界面包含的所有页面类型
-typedef		enum
-{
-	PAGE_FRONT = 0,
-	PAGE_FONT_FULL,
-	PAGE_LEFT,
-	PAGE_LEFT_FULL,
-	PAGE_RIGHT,
-	PAGE_RIGHT_FULL,
-	PAGE_REAR,
-	PAGE_REAR_FULL,
-	PAGE_AllVIEW,
-	PAGE_MENU,				//菜单
-		PAGE_MENU_SETPARAM, 	//设置参数
-		PAGE_MENU_UPG,			//升级
-		PAGE_MENU_COLABRAT, 	//标定
-		PAGE_MENU_ADVANCEDFUNC,
-	
-	PAGE_TYPE_END
-}	ePAGE_TYPE;
-
-typedef enum {
-	TITLE_MENU = 0,
-	TITLE_SETPARAM,
-	TITLE_UPD,
-	TITLE_COLABRATE,
-	TITLE_ADVFUNC,
-
-	TITLE_END,
-
-	TITLE_NON = 0xFF
-} eTITLE;
-
-
-//图标类型
-typedef		enum
-{
-	ICON_UNDEFINE = -1,		
-	ICON_TIP = 0,								//行提示
-	ICON_OK,									//成功状态
-	ICON_ERR,									//错误状态
-
-	ICON_TYPE_END,
-}	eICON;
-
-//图标
-typedef		struct
-{
-	u8				eType;										//图标类型
-//	tREGION			tRegion;									//显示区域
-//	u8				bVisable;									//是否可见
-//	u8				u8Row;										//行
-//	u8				u8Column;									//列
-	u8				u8AttachedItem;								//所属项 
-
-}	tICON;
-
-//按钮类型
-typedef		enum
-{
-	BUTTON_OK = 0,												//确定
-	BUTTON_CANCEL,												//取消
-
-	BUTTON_TYPE_END,
-		
-}	_eButton_Type;
-
-
-//按钮
-typedef		struct
-{
-	_eButton_Type	eType;										//按钮类型
-//	tREGION			tRegion;									//显示区域
-	u8				u8Row;										//行
-	u8				u8Column;									//列
-
-}	tBUTTON;
-
-/*
-//标题栏
-typedef		struct
-{
-	void			*pSrc;										//数据源
-}	tTITLEBAR;
-*/
-
-//所有的项
-typedef enum {
-	ITEM_MENU_PARAM = 0,				//设置参数
-	ITEM_MENU_UPD,						//升级
-	ITEM_MENU_COLABRATION,				//标定
-	ITEM_MENU_ADVANCEDFUNC,				//高级功能
-	ITEM_MENU_COLABRATION_WRITEPARAM,	//标定-写参数
-	ITEM_MENU_COLABRATION_COLABRATE,	//标定-标定
-
-	ITEM_MENU_END
-} eITEMTYPE;
-
-/*命令执行结果*/
-typedef enum {
-	RET_OK = 1,  	/*成功*/
-	RET_FAIL = 0, 	/*失败*/
-	RET_TOUT, 		/*超时*/
-	RET_UNKOWN
-} eRET;
-
-//项，是指屏幕中的一行，一页可最多显示四项
-typedef		struct
-{
-	eITEMTYPE		eItemType;					//数据源	
-	eICON			eTipIcon;					//当前项提示图标
-	eICON			eStatIcon;					//当前项命令执行结果图标
-	u8				u8Ret;						//命令项执行结果
-} 	tITEM;
-
-//页面,由项、图标、按钮三种元素组成
-typedef		struct
-{
-//	tVIEW*			pViews;										//视图			
-	eVIEWTYPE		eViewType;									//视图类型
-//	void*			pTitleBar;									//标题栏
-	eTITLE			eTitle;
-	tITEM*			pItems;										//项
-	tBUTTON*		pButtons;									//按钮
-
-	u8				u8ItemCnt;									//项数
-	u8				u8ButtonCnt;								//按钮个数
-	u8				u8FocusItem;								//焦点项
-	u8				u8FocusButton;								//焦点按钮
-
-	u8				ePageType;									//页面类型
-	u8				u8ParentPageId; 							//父页面号
-	
-} 	tPAGE;
-
-
-//整个界面；由多个页面级联而成
-typedef		struct
-{	
-	u8				u8CurPage;									//当前活动页面号
-	tPAGE			aPage[PAGE_TYPE_END];						//页面数组
-					
-} 	tPAGE_CONTROL_FLOW;
-
-
-//OLED显示屏控制有限状态机
-typedef		struct
-{
-//	u16					u16CurrentState;					//当前状态
-	
-	u16					u8PendingCommand;					//等待执行的按键命令
-	u8					u8CurrentPage;						//当前操作页面
-	u8					bPageFresh;							//是否刷新页面
-
-
-} 	tUIFSM;
-	  
-//屏初始化
-void	UI_Init(void);
-
-//显示页面
-void	Show_Page(u8 u8PageType);
-
-//显示视图
-void 	Show_View(eVIEWTYPE eViewType);
-
-//显示标题栏
-void 	Show_Title(eTITLE eTtitle);
-
-
-//显示单个列表
-void	Show_Item(u8 u8Page, u8 u8ItemIndex, u8 u8ShowType);
-
-//显示图标
-void	Show_Icon(void);
-
-//显示按钮
-void	Show_Button(u8 u8Page, u8 u8ButtonIndex, u8 u8ShowType);
-
-//将屏显缓区内一块点位区域输出到屏幕中对应区域显示
-void	BitBlt(eSUBVIEW eSubView, tREGION *ptRegion, void *pSrc);
-void	BitBlt_Raw(int win_startX, int win_startY, int win_Width, int win_Height, int crop_startX, int crop_startY, void *pSrc);
-
-
-//初始化页面控制流
-void	Init_Page(void);
-
-//界面处理
-void	UI_Process(void);
-
-//按键消息处理
-//void	UI_Key_Process(eKEYTYPE eKeyType);
-void	UI_Key_Process();
-
-
-//static 	tVIEW		aView[PAGE_TYPE_END][VIEW_END];			//所有视图
-static	tITEM		aItem[PAGE_TYPE_END][4];					//所有项
-static	tICON		aIcon[ICON_TYPE_END];						//图标
-static	tBUTTON		aButton[2];									//按钮
-
-volatile tUIFSM					tUIFsm;	   			//屏状态机
-volatile tPAGE_CONTROL_FLOW		tPage_Flow;			//页面控制流
-
-
-static uint8_t	menu_Buf[466*480*2];	//菜单背景，黑色
-
-
-tPAGE		*pCurPage 		= NULL;							//当前页面指针
-tPAGE		*pNextPage 		= NULL;							//跳转页面指针
-tPAGE		*pParentPage 	= NULL;							//父页面指针
-
-/*!
- * 视图区域
- *
- */
-tREGION aViewRegion[SUBVIEW_END] = {
-	{0, 0, 320, 480, 24, 0 },	//synthesis view
-	{120-24, 120, 80, 240, 0, 0 },	//car box
-	{270, 0, 736-270, 400, 90, 60 },	//single camera view
-	{270, 400, 480, 80, 20, 0 },	//Tip bar
-	{0, 0, 736, 480, 0, 0 },   //full screen
-	{0, 0, 320, 240, 0, 0 },	//split
-	{320, 0, 736 - 320, 240, 0, 00 },	//split
-	{0, 240, 320, 240, 0, 0 },	//split
-	{320, 240, 736 - 320, 240, 0, 0 },	//split
-};
-
-
-/*!
- * 显示定义
- *
- */
-#define	WIN_WITDTH				(736-270)	//466
-#define	WIN_HEIGHT				480
-#define	WIN_START_X				270	//屏幕起始显示位置
-#define WIN_START_Y				0
-#define WIN_SEG_WIDTH			60  //每格子宽度
-#define	WIN_SEG_AMOUNT			8	//总格子数，注意最后一个是66
-//标题栏
-#define	TITLE_WIN_START_X		(WIN_START_X)	//屏幕起始显示位置
-#define	TITLE_WIN_START_Y		0	//屏幕起始显示位置
-#define TITLE_WIDTH				(142)	
-#define TITLE_HEIGHT			(54)
-//分割栏
-#define	SEP_START_X				(WIN_START_X)	//屏幕起始显示位置
-#define	SEP_START_Y				66	//屏幕起始显示位置
-#define SEP_WIDTH				466 //(736-270)
-#define SEP_HEIGHT				4
-
-//列表项
-#define	ITEM_START_X			(WIN_START_X + (WIN_SEG_WIDTH << 1))//屏幕起始显示位置
-#define ITEM_HEIGHT				(100)
-#define ITEM_START_Y_OFFSET		(80)
-#define ITEM_START_Y(i)			(ITEM_START_Y_OFFSET + i * ITEM_HEIGHT)	//起始显示位置
-//列表项菜单
-#define	ITEM_MENU_WIDTH			(102)
-#define ITEM_MENU_HEIGHT		(42)
-//列表项高亮条
-#define	ITEM_BAR_WIDTH			(240)
-#define ITEM_BAR_HEIGHT			(4)
-#define ITEM_BAR_START_X		(ITEM_START_X)
-#define ITEM_BAR_START_Y(i)		(ITEM_START_Y(i) + ITEM_MENU_HEIGHT + 5)
-//提示箭头
-#define	ITEM_TIP_WIDTH			(50)
-#define ITEM_TIP_HEIGHT			(50)
-#define ITEM_TIP_START_X		(330)
-#define ITEM_TIP_START_Y(i)		(ITEM_START_Y(i))
-//结果状态
-#define	ITEM_RET_WIDTH			(50)
-#define ITEM_RET_HEIGHT			(50)
-#define ITEM_RET_START_X		(630)
-#define ITEM_RET_START_Y(i)		(ITEM_START_Y(i))
-
-
-typedef struct {
-	void*		pSrc_Normal;	//常态
-	void*		pSrc_Hilight;	//高亮
-	int			width;			//宽度
-	int			height;			//高度
-} tPICYUV;
-
-#if 0
-extern const unsigned char yuv_menu_param_yuv[] ;
-extern const unsigned char yuv_menu_param_h_yuv[] ;
-extern const unsigned char yuv_menu_upd_h_yuv[] ;
-extern const unsigned char yuv_menu_upd_h_yuv[] ;
-extern const unsigned char yuv_menu_cola_yuv[] ;
-extern const unsigned char yuv_menu_cola_h_yuv[] ;
-extern const unsigned char yuv_menu_adv_yuv[] ;
-extern const unsigned char yuv_menu_adv_h_yuv[] ;
-extern const unsigned char yuv_colab_wp_yuv[] ;
-extern const unsigned char yuv_colab_wp_h_yuv[] ;
-extern const unsigned char yuv_colab_clb_yuv[] ;
-extern const unsigned char yuv_colab_clb_h_yuv[] ;
-
-extern const unsigned char yuv_tip_yuv[] ;
-extern const unsigned char yuv_ret_ok_yuv[] ;
-extern const unsigned char yuv_ret_err_yuv[] ;
-
-extern const unsigned char yuv_bar_yuv[] ;
-extern const unsigned char yuv_bar_h_yuv[] ;
-
-extern const unsigned char yuv_title_menu_yuv[];
-extern const unsigned char yuv_title_param_yuv[];
-extern const unsigned char yuv_title_upg_yuv[];
-extern const unsigned char yuv_title_colab_yuv[];
-extern const unsigned char yuv_title_adv_yuv[];
-extern const unsigned char yuv_sep_yuv[];
-extern const unsigned char yuv_car_yuv[];
-
+typedef enum _eMSG_TYPE {
+	MSG_FRONT = 0,		/*方向前*/
+	MSG_FRONT_FULLVIEW,	/*方向前-全屏*/
+	MSG_LEFT,			/*方向左，实测是右摄像头图像*/
+	MSG_LEFT_FULLVIEW,	/*方向左-全屏*/
+	MSG_RIGHT,   		/*方向右，，实测是右摄像头图像*/
+	MSG_RIGHT_FULLVIEW,	/*方向右-全屏*/
+	MSG_REAR,			/*倒车*/
+	MSG_ALLVIEW,		/*四路视频同时显示*/
+	MSG_SNAPSHOT,		/*标定-摄像头拍照*/
+	MSG_SNAPSHOT_OK,	/*标定-摄像头拍照，成功*/
+	MSG_SNAPSHOT_ERR,	/*标定-摄像头拍照，失败*/
+	MSG_CALIBRATING,	/*标定-读取标定参数送给DSP*/
+	MSG_CALIBRATING_OK,	/*标定-读取标定参数送给DSP*/
+	MSG_CALIBRATING_ERR,	/*标定-读取标定参数送给DSP*/
+
+	MSG_SLEEP,			/*休眠*/
+
+	MSG_MENU_POWER,			/*菜单消息：电源*/
+	MSG_MENU_RETURN,		/*菜单消息：返回*/
+	MSG_MENU_LEFT_VIEW,		/*菜单消息：左视*/
+	MSG_MENU_RIGHT_VIEW,	/*菜单消息：右视*/
+	MSG_MENU_FRONT_VIEW,	/*菜单消息：前视*/
+	MSG_MENU_REAR_VIEW,		/*菜单消息：后视*/
+	MSG_MENU_UP,			/*菜单消息：上*/
+	MSG_MENU_DOWN,			/*菜单消息：下*/
+	MSG_MENU_LEFT,			/*菜单消息：左*/
+	MSG_MENU_RIGHT,			/*菜单消息：右*/
+	MSG_MENU_OK				/*菜单消息：确定*/
+
+} eMSG_TYPE;
+
+
+#ifdef A8_MCU_COMM_UART
+#include <termios.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <errno.h>
+#include <pthread.h>
+
+
+#define DEVICE "/dev/ttyO1"  ///核心板与底板通信串口，UART2
+
+static int COMM_CreateTask(void);
+
+#endif ///#ifdef A8_MCU_COMM_UART
+
+
+static int TakeCalibrating(void);
+static int TakeSnapshot(void);
+
+
+
+//disable, gzd
+#define GFX_CUBE//liuxu, 8/28/2013, enable GFX demo, which should be enabled exclusively with MP4 encoder.
+
+//#include <sys/ioctl.h>
+////#include <fcntl.h>//liuxu, 12/19/2013, move to outside.
+//#include <sys/mman.h>
+//#include <unistd.h>
+//#include <getopt.h>
+//#include <signal.h>
+//#include <sys/time.h>
+//#include <bc_cat.h>
+//#include "common.h"
+
+#ifdef GFX_CUBE
+#include <sys/ioctl.h>
+//#include <fcntl.h>//liuxu, 12/19/2013, move to outside.
+#include <sys/mman.h>
+#include <unistd.h>
+#include <getopt.h>
+#include <signal.h>
+#include <sys/time.h>
+#include <bc_cat.h>
+#include "common.h"
+
+// + a0220402, add support carit board key
+#define CONFIG_CARIT
+// - a0220402,
+
+#define NO_MEMCPY//liuxu, 10/10/2013.
+
+#ifdef NO_MEMCPY
+
+#if 0//liuxu, 10/12/2013, option 1, 4 frames are combined to one big texture buffer.
+#define FRAME_WIDTH     736*2
+#define FRAME_HEIGHT    480*2
+#define FRAME_SIZE      736*480*6//liuxu, 9/7/2013. (FRAME_WIDTH * FRAME_HEIGHT * 1.5)
+#define MAX_FRAMES      6
+#define YUV_PIXEL_FMT   BC_PIX_FMT_NV12
+#define MAX_BUFFERS     6
+#else //liuxu, 10/12/2013, option 2, use one of 4 frames to constitute to a texture buffer at size of 736x480x1.5 for YUV420.
+#define FRAME_WIDTH     736
+#define FRAME_HEIGHT    480
+#define FRAME_SIZE      736*480*3/2//liuxu, 9/7/2013. (FRAME_WIDTH * FRAME_HEIGHT * 1.5)
+
+#ifdef TI_DSP_PROCESSING
+#define MAX_FRAMES      25//liuxu, 02/12/2014, add one for outputbuf of ti dsp. 
+#define YUV_PIXEL_FMT   BC_PIX_FMT_NV12
+#define MAX_BUFFERS     25
+#else
+#define MAX_FRAMES      24//liuxu, 10/18/2013.
+#define YUV_PIXEL_FMT   BC_PIX_FMT_NV12
+#define MAX_BUFFERS     24//liuxu, 10/18/2013.
+#endif
+
+#define InterChannelIndexOffset 6//liuxu, 10/18/2013, to support 4 channels.
+
+#define M3_FRAMEBUFFER_PA_0 0x83c6c0c0//liuxu, 02/12/2014. //liuxu, 11/19/2013, this would change when frame buffer memory map changes at M3 side.
+#define M3_FRAMEBUFFER_PA_1 0x83e718c0
+#define M3_FRAMEBUFFER_PA_2 0x840770c0
+#define M3_FRAMEBUFFER_PA_3 0x8427c8c0
+#define M3_FRAMEBUFFER_PA_4 0x844820c0
+#define M3_FRAMEBUFFER_PA_5 0x846878c0//liuxu, 02/12/2014. 
 
 #endif
 
-typedef struct {
-	void*	pSrc;
-	int		width;
-	int		height;
-} tTITLE;
-
-static tTITLE	aTitle_YUV[TITLE_END];
-
-
-/*!
- * 列表项资源图片数组
- *
- */
-static tPICYUV aItem_YUV[ITEM_MENU_END];
-
-static tPICYUV aBar_YUV;
-
-
-
-//屏初始化
-void	UI_Init(void)
-{
-	u32 i = 0;
-
-	aTitle_YUV[TITLE_MENU].pSrc = yuv_title_menu_yuv;
-	aTitle_YUV[TITLE_MENU].width = 142;
-	aTitle_YUV[TITLE_MENU].height = 54;
-	aTitle_YUV[TITLE_SETPARAM].pSrc = yuv_title_param_yuv;
-	aTitle_YUV[TITLE_SETPARAM].width = 142;
-	aTitle_YUV[TITLE_SETPARAM].height = 54;
-	aTitle_YUV[TITLE_UPD].pSrc = yuv_title_upg_yuv;
-	aTitle_YUV[TITLE_UPD].width = 142;
-	aTitle_YUV[TITLE_UPD].height = 54;
-	aTitle_YUV[TITLE_COLABRATE].pSrc = yuv_title_colab_yuv;
-	aTitle_YUV[TITLE_COLABRATE].width = 142;
-	aTitle_YUV[TITLE_COLABRATE].height = 54;
-	aTitle_YUV[TITLE_ADVFUNC].pSrc = yuv_title_adv_yuv;
-	aTitle_YUV[TITLE_ADVFUNC].width = 142;
-	aTitle_YUV[TITLE_ADVFUNC].height = 54;
-
-	aItem_YUV[ITEM_MENU_PARAM].pSrc_Normal = yuv_menu_param_yuv;
-	aItem_YUV[ITEM_MENU_PARAM].pSrc_Hilight = yuv_menu_param_h_yuv;
-	aItem_YUV[ITEM_MENU_PARAM].width = 102;
-	aItem_YUV[ITEM_MENU_PARAM].height = 42;
-	aItem_YUV[ITEM_MENU_UPD].pSrc_Normal = yuv_menu_upd_yuv;
-	aItem_YUV[ITEM_MENU_UPD].pSrc_Hilight = yuv_menu_upd_h_yuv;
-	aItem_YUV[ITEM_MENU_UPD].width = 102;
-	aItem_YUV[ITEM_MENU_UPD].height = 42;
-	aItem_YUV[ITEM_MENU_COLABRATION].pSrc_Normal = yuv_menu_cola_yuv;
-	aItem_YUV[ITEM_MENU_COLABRATION].pSrc_Hilight = yuv_menu_cola_h_yuv;
-	aItem_YUV[ITEM_MENU_COLABRATION].width = 102;
-	aItem_YUV[ITEM_MENU_COLABRATION].height = 42;
-	aItem_YUV[ITEM_MENU_ADVANCEDFUNC].pSrc_Normal = yuv_menu_adv_yuv;
-	aItem_YUV[ITEM_MENU_ADVANCEDFUNC].pSrc_Hilight = yuv_menu_adv_h_yuv;
-	aItem_YUV[ITEM_MENU_ADVANCEDFUNC].width = 102;
-	aItem_YUV[ITEM_MENU_ADVANCEDFUNC].height = 42;
-	aItem_YUV[ITEM_MENU_COLABRATION_WRITEPARAM].pSrc_Normal = yuv_colab_wp_yuv;
-	aItem_YUV[ITEM_MENU_COLABRATION_WRITEPARAM].pSrc_Hilight = yuv_colab_wp_h_yuv;
-	aItem_YUV[ITEM_MENU_COLABRATION_WRITEPARAM].width = 102;
-	aItem_YUV[ITEM_MENU_COLABRATION_WRITEPARAM].height = 42;
-	aItem_YUV[ITEM_MENU_COLABRATION_COLABRATE].pSrc_Normal = yuv_colab_clb_yuv;
-	aItem_YUV[ITEM_MENU_COLABRATION_COLABRATE].pSrc_Hilight = yuv_colab_clb_h_yuv;
-	aItem_YUV[ITEM_MENU_COLABRATION_COLABRATE].width = 102;
-	aItem_YUV[ITEM_MENU_COLABRATION_COLABRATE].height = 42;
-
-	aBar_YUV.pSrc_Normal = yuv_bar_yuv;
-	aBar_YUV.pSrc_Hilight = yuv_bar_h_yuv;
-	aBar_YUV.width = 200;
-	aBar_YUV.height = 4;
-
-
-	tUIFsm.u8PendingCommand = 0xFF;
-	tUIFsm.u8CurrentPage = PAGE_DEFAULT;
-	tUIFsm.bPageFresh = FALSE;
-
-
-
-
-	
-	//初始化页面
-	Init_Page();
-
-	//菜单背景填充黑色
-	while(i < ((466*480*2) - 1)) {
-		menu_Buf[i] = 0x10;
-		i++;
-		menu_Buf[i] = 0x80;
-		i++;
-	}
-}
-
-
-/*!
- * 初始化页面控制流
- * \n
- *
- * \n
- * @see
- */
-void	Init_Page(void)
-{	
-	u8	i = 0;
-	u8	u8PageType = 0;
-	tPAGE	*pPage = NULL;
-
-   	//清空项
-	memset(&aItem, 0, 4 * PAGE_TYPE_END * sizeof(tITEM));
-//	memset(&aView, 0, VIEW_END * sizeof(tVIEW));
-
-	//1)初始化所有按钮
-	aButton[0].eType = BUTTON_OK;
-	aButton[0].u8Row = 2;
-	aButton[0].u8Column = 5;
-//	aButton[0].u8Width = _BUTTON_WIDTH_2_X_;
-
-	//初始化按钮-取消
-	aButton[1].eType = BUTTON_CANCEL;
-	aButton[1].u8Row = 2;
-	aButton[1].u8Column = 1;
-//	aButton[1].u8Width = _BUTTON_WIDTH_2_X_;
-
-	//2)初始化所有页面
-	u8PageType = PAGE_FRONT;
-
-	while( u8PageType < PAGE_TYPE_END )
-	{
-		pPage = &(tPage_Flow.aPage[u8PageType]);
-
-		memset((u8*)pPage, 0, sizeof(tPAGE));
-		
-		pPage->ePageType = (ePAGE_TYPE)u8PageType;
-		
-		switch( u8PageType )
-		{
-			//视频显示页面
-		case	PAGE_FRONT:
-			pPage->eViewType = VIEW_FRONT;
-			pPage->eTitle = TITLE_NON;
-			break;
-		case	PAGE_FONT_FULL:
-			pPage->eViewType = VIEW_FONT_FULL;
-			pPage->eTitle = TITLE_NON;
-			break;
-		case	PAGE_LEFT:
-			pPage->eViewType = VIEW_LEFT;
-			pPage->eTitle = TITLE_NON;
-			break;
-		case	PAGE_LEFT_FULL:
-			pPage->eViewType = VIEW_LEFT_FULL;
-			pPage->eTitle = TITLE_NON;
-			break;
-		case	PAGE_RIGHT:
-			pPage->eViewType = VIEW_RIGHT;
-			pPage->eTitle = TITLE_NON;
-			break;
-		case	PAGE_RIGHT_FULL:
-			pPage->eViewType = VIEW_RIGHT_FULL;
-			pPage->eTitle = TITLE_NON;
-			break;
-		case	PAGE_REAR:
-			pPage->eViewType = VIEW_REAR;
-			pPage->eTitle = TITLE_NON;
-			break;
-		case	PAGE_REAR_FULL:
-			pPage->eViewType = VIEW_REAR_FULL;
-			pPage->eTitle = TITLE_NON;
-			break;
-		case	PAGE_AllVIEW:
-			pPage->eViewType = VIEW_AllVIEW;
-			pPage->eTitle = TITLE_NON;
-			break;
-		case	PAGE_MENU:	//菜单
-			pPage->eViewType = VIEW_MENU;
-			pPage->eTitle = TITLE_MENU;
-			pPage->pItems = aItem[PAGE_MENU];
-			pPage->pButtons = NULL;
-			pPage->u8ButtonCnt = 0;
-			pPage->u8FocusItem = 0;
-			pPage->u8FocusButton = 0;
-
-			pPage->u8ItemCnt = 4;
-			pPage->pItems[0].eItemType = ITEM_MENU_PARAM;
-			pPage->pItems[0].u8Ret = RET_UNKOWN;
-			pPage->pItems[1].eItemType = ITEM_MENU_UPD;
-			pPage->pItems[1].u8Ret = RET_UNKOWN;
-			pPage->pItems[2].eItemType = ITEM_MENU_COLABRATION;
-			pPage->pItems[2].u8Ret = RET_UNKOWN;
-			pPage->pItems[3].eItemType = ITEM_MENU_ADVANCEDFUNC;
-			pPage->pItems[3].u8Ret = RET_UNKOWN;
-
-			break;
-		
-		case	PAGE_MENU_SETPARAM: 	//设置参数
-
-			pPage->eViewType = VIEW_MENU;
-			pPage->eTitle = TITLE_SETPARAM;
-			pPage->pItems = NULL;
-			pPage->pButtons = NULL;
-			pPage->u8ButtonCnt = 0;
-			pPage->u8FocusItem = 0;
-			pPage->u8FocusButton = 0;
-			pPage->u8ItemCnt = 0;
-			break;
-
-		case	PAGE_MENU_UPG:			//升级
-
-			pPage->eViewType = VIEW_MENU;
-			pPage->eTitle = TITLE_UPD;
-			pPage->pItems = NULL;
-			pPage->pButtons = NULL;
-			pPage->u8ButtonCnt = 0;
-			pPage->u8FocusItem = 0;
-			pPage->u8FocusButton = 0;
-			pPage->u8ItemCnt = 0;
-			break;
-
-		case	PAGE_MENU_COLABRAT: 	//标定
-
-			pPage->eViewType = VIEW_MENU;
-			pPage->eTitle = TITLE_COLABRATE;
-			pPage->pItems = aItem[PAGE_MENU_COLABRAT];
-			pPage->pButtons = NULL;
-			pPage->u8ButtonCnt = 0;
-			pPage->u8FocusItem = 0;
-			pPage->u8FocusButton = 0;
-
-			pPage->u8ItemCnt = 2;
-			pPage->pItems[0].eItemType = ITEM_MENU_COLABRATION_WRITEPARAM;
-			pPage->pItems[0].u8Ret = RET_UNKOWN;
-			pPage->pItems[1].eItemType = ITEM_MENU_COLABRATION_COLABRATE;
-			pPage->pItems[1].u8Ret = RET_UNKOWN;
-			break;
-
-
-			//高级功能页面
-		case	PAGE_MENU_ADVANCEDFUNC:
-			
-			pPage->eViewType = VIEW_MENU;
-			pPage->eTitle = TITLE_ADVFUNC;
-			pPage->pItems = NULL;
-			pPage->pButtons = NULL;
-			pPage->u8ButtonCnt = 0;
-			pPage->u8FocusItem = 0;
-			pPage->u8FocusButton = 0;
-			pPage->u8ItemCnt = 0;
-			break;
-		default:
-			break;
-		}//end switch
-
-		u8PageType ++;
-	}//end while
-}
-	
-/*!
- * 显示默认页面
- * \n
- *
- * \n
- * @see
- */
-void	UI_ShowDefaultPage()
-{
-	//显示默认页面
-	tUIFsm.u8CurrentPage = PAGE_DEFAULT;
-
-	Show_Page(PAGE_DEFAULT);
-}
-
-
-/*!
- * 界面处理流程
- * \n
- *
- * \n
- * @see
- */
-void	UI_Process()
-{
-	u8	u8Command = 0xFF;
-
-
-	//初始化并显示第一个页面即默认页面
-	if(tUIFsm.u8CurrentPage == 0xFF)
-	{
-		//显示默认页面
-		tUIFsm.u8CurrentPage = PAGE_DEFAULT;
-
-		Show_Page(PAGE_DEFAULT);
-
-		return;
-	}
-
-	//取出按键消息				  
-	u8Command = tUIFsm.u8PendingCommand;
-	
-	//按键有效？
-	if(u8Command != KEY_END)
-	{
-		//准备接收新的按键消息
-		tUIFsm.u8PendingCommand = KEY_UNKNOWN;
-
-		//按键处理
-		UI_Key_Process(u8Command);
-	}
-
-}
-
-
-/*!
- * 按键消息处理
- * \n
- *
- * \n
- * @see
- */
-void	UI_Key_Process()
-{
-	u8	i = 0;
-	u8 	u8FocusItem = 0;
-	u8	u8CurrentPage = 0;
-	eKEYTYPE eKeyType;
-
-	if(0xFF == tUIFsm.u8PendingCommand)
-		return;
-	
-	if(0 == tUIFsm.u8PendingCommand)
-		eKeyType = KEY_FRONT;
-	else if(1 == tUIFsm.u8PendingCommand)
-			eKeyType = KEY_LEFT;
-	else if(2 == tUIFsm.u8PendingCommand)
-			eKeyType = KEY_RIGHT;
-	else if(3 == tUIFsm.u8PendingCommand)
-			eKeyType = KEY_REAR;
-	else if(4 == tUIFsm.u8PendingCommand)
-			eKeyType = MENU_POWER;
-	else
-			eKeyType = KEY_UNKNOWN;
-	
-	tUIFsm.u8PendingCommand = 0xFF;
-
-	//取当前页面指针		 
-	pCurPage = &(tPage_Flow.aPage[tUIFsm.u8CurrentPage]);
-
-	if(pCurPage == NULL/* || pNextPage == NULL*/)
-	{
-		printf("取页面指针错！\n");	
-	
-		return;
-	}
-
-	//取当前页面的焦点项索引
-	u8FocusItem = pCurPage->u8FocusItem;
-
-	//根据页面类型处理按键消息
-	switch(tUIFsm.u8CurrentPage)
-	{
-	case	PAGE_FRONT:
-	case	PAGE_FONT_FULL:
-	case	PAGE_LEFT:
-	case	PAGE_LEFT_FULL:
-	case	PAGE_RIGHT:
-	case	PAGE_RIGHT_FULL:
-	case	PAGE_REAR:
-	case	PAGE_REAR_FULL:
-	case	PAGE_AllVIEW:
-
-		if(eKeyType == KEY_LEFT)	//遥控器消息:电源
-		{
-			if(tUIFsm.u8CurrentPage == PAGE_LEFT) {
-				//修改屏状态机当前页面为主页面
-				tUIFsm.u8CurrentPage = PAGE_LEFT_FULL;
-
-				//显示主页面
-				Show_Page(PAGE_LEFT_FULL);
-			}
-			else {
-
-				//修改屏状态机当前页面为主页面
-				tUIFsm.u8CurrentPage = PAGE_LEFT;
-
-				//显示主页面
-				Show_Page(PAGE_LEFT);
-			}
-		}		
-		else if(eKeyType == KEY_RIGHT)	//右视
-		{
-			if(tUIFsm.u8CurrentPage == PAGE_RIGHT) {
-			
-				//修改屏状态机当前页面为主页面
-				tUIFsm.u8CurrentPage = PAGE_RIGHT_FULL;
-			
-				//显示主页面
-				Show_Page(PAGE_RIGHT_FULL);
-			}
-			else {
-			
-				//修改屏状态机当前页面为主页面
-				tUIFsm.u8CurrentPage = PAGE_RIGHT;
-			
-				//显示主页面
-				Show_Page(PAGE_RIGHT);
-			}
-		}
-		//前视
-		else if(eKeyType == KEY_FRONT)			
-		{
-			if(tUIFsm.u8CurrentPage == PAGE_FRONT) {
-			
-				//修改屏状态机当前页面为主页面
-				tUIFsm.u8CurrentPage = PAGE_FONT_FULL;
-			
-				//显示主页面
-				Show_Page(PAGE_FONT_FULL);
-			}
-			else {
-			
-				//修改屏状态机当前页面为主页面
-				tUIFsm.u8CurrentPage = PAGE_FRONT;
-			
-				//显示主页面
-				Show_Page(PAGE_FRONT);
-			}
-		}
-		//后视
-		else if(eKeyType == KEY_REAR)			
-		{
-			if(tUIFsm.u8CurrentPage == PAGE_REAR) {
-			
-				//修改屏状态机当前页面为主页面
-				tUIFsm.u8CurrentPage = PAGE_REAR_FULL;
-			
-				//显示主页面
-				Show_Page(PAGE_REAR_FULL);
-			}
-			else {
-			
-				//修改屏状态机当前页面为主页面
-				tUIFsm.u8CurrentPage = PAGE_REAR;
-			
-				//显示主页面
-				Show_Page(PAGE_REAR);
-			}
-		}
-		//遥控器消息:电源
-		else if(eKeyType == MENU_POWER) 
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_MENU].u8ParentPageId = tUIFsm.u8CurrentPage;
-		
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_MENU;
-		
-			//显示主页面
-			Show_Page(PAGE_MENU);
-		}
-		//其他翻页消息不响应
-		else {
-		}
-		
-		break;
-	//主菜单
-	case	PAGE_MENU:	
-			
-		if(eKeyType == KEY_FRONT)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_FRONT;
-	
-			//显示主页面
-			Show_Page(PAGE_FRONT);
-		}
-		else if(eKeyType == KEY_LEFT)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_LEFT;
-	
-			//显示主页面
-			Show_Page(PAGE_LEFT);
-		}
-		else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_RIGHT;
-	
-			//显示主页面
-			Show_Page(PAGE_RIGHT);
-		}
-		else if(eKeyType == KEY_REAR)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_REAR;
-	
-			//显示主页面
-			Show_Page(PAGE_REAR);
-		}			
-		else{
-			if(eKeyType == MENU_UP)   
-			{
-				if(pCurPage->u8FocusItem == 0)
-					break;
-				
-				//正常显示当前项
-				Show_Item(PAGE_MENU, pCurPage->u8FocusItem, 0 );
-
-				//焦点切换到下一项
-				pCurPage->u8FocusItem --;
-				
-				//高亮显示下一项
-				Show_Item(PAGE_MENU, pCurPage->u8FocusItem, 1 ); 
-				
-			}
-			else if(eKeyType == MENU_DOWN)   
-			{
-				//正常显示当前项
-				Show_Item(PAGE_MENU, pCurPage->u8FocusItem, 0 );
-
-				//焦点切换到下一项
-				if(pCurPage->u8FocusItem < pCurPage->u8ItemCnt - 1)
-					pCurPage->u8FocusItem ++;
-				
-				//高亮显示下一项
-				Show_Item(PAGE_MENU, pCurPage->u8FocusItem, 1 ); 		
-			}
-			else if(eKeyType == MENU_OK)   
-			{
-				//当前位置页面
-				if(pCurPage->u8FocusItem == 0) 
-				{
-					//指向待跳转页面，组织项显示内容
-					pNextPage = &(tPage_Flow.aPage[PAGE_MENU_SETPARAM]);
-					pNextPage->u8ParentPageId = tUIFsm.u8CurrentPage;
-
-					tUIFsm.u8CurrentPage = PAGE_MENU_SETPARAM;
-					Show_Page(PAGE_MENU_SETPARAM);
-				}
-				//当前位置页面
-				else if(pCurPage->u8FocusItem == 1) 
-				{
-					//指向待跳转页面，组织项显示内容
-					pNextPage = &(tPage_Flow.aPage[PAGE_MENU_UPG]);
-					pNextPage->u8ParentPageId = tUIFsm.u8CurrentPage;
-
-					tUIFsm.u8CurrentPage = PAGE_MENU_UPG;
-					Show_Page(PAGE_MENU_UPG);
-				}
-				//当前位置页面
-				else if(pCurPage->u8FocusItem == 2) 
-				{
-					//指向待跳转页面，组织项显示内容
-					pNextPage = &(tPage_Flow.aPage[PAGE_MENU_COLABRAT]);
-					pNextPage->u8ParentPageId = tUIFsm.u8CurrentPage;
-
-					tUIFsm.u8CurrentPage = PAGE_MENU_COLABRAT;
-					Show_Page(PAGE_MENU_COLABRAT);
-				}
-				//当前位置页面
-				else if(pCurPage->u8FocusItem == 3) 
-				{
-					//指向待跳转页面，组织项显示内容
-					pNextPage = &(tPage_Flow.aPage[PAGE_MENU_ADVANCEDFUNC]);
-					pNextPage->u8ParentPageId = tUIFsm.u8CurrentPage;
-
-					tUIFsm.u8CurrentPage = PAGE_MENU_ADVANCEDFUNC;
-					Show_Page(PAGE_MENU_ADVANCEDFUNC);
-				}
-				else {
-				}
-			}
-			else if(eKeyType == MENU_BACK)   
-			{
-				tUIFsm.u8CurrentPage = pCurPage->u8ParentPageId;
-				Show_Page(tUIFsm.u8CurrentPage);
-			}
-			
-		}
-		break;
-	
-	case	PAGE_MENU_COLABRAT:	//标定
-		
-		if(eKeyType == KEY_FRONT)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_FRONT;
-	
-			//显示主页面
-			Show_Page(PAGE_FRONT);
-		}
-		else if(eKeyType == KEY_LEFT)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_LEFT;
-	
-			//显示主页面
-			Show_Page(PAGE_LEFT);
-		}
-		else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_RIGHT;
-	
-			//显示主页面
-			Show_Page(PAGE_RIGHT);
-		}
-		else if(eKeyType == KEY_REAR)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_REAR;
-	
-			//显示主页面
-			Show_Page(PAGE_REAR);
-		}			
-		else{
-			if(eKeyType == MENU_UP)   
-			{
-				if(pCurPage->u8FocusItem == 0)
-						break;
-					
-				//正常显示当前项
-				Show_Item(PAGE_MENU_COLABRAT, pCurPage->u8FocusItem, 0 );
-			
-				//焦点切换到下一项
-				pCurPage->u8FocusItem --;
-				
-				//高亮显示下一项
-				Show_Item(PAGE_MENU_COLABRAT, pCurPage->u8FocusItem, 1 ); 
-				
-			}
-			else if(eKeyType == MENU_DOWN)	 
-			{
-				//正常显示当前项
-				Show_Item(PAGE_MENU_COLABRAT, pCurPage->u8FocusItem, 0 );
-		
-				//焦点切换到下一项
-				if(pCurPage->u8FocusItem < pCurPage->u8ItemCnt - 1)
-						pCurPage->u8FocusItem ++;
-				
-				//高亮显示下一项
-				Show_Item(PAGE_MENU_COLABRAT, pCurPage->u8FocusItem, 1 ); 		
-			}
-			else if(eKeyType == MENU_OK)   
-			{
-				//标定-写参数页面
-				if(pCurPage->u8FocusItem == 0) 
-				{
-
-
-				}
-				//标定-执行标定页面
-				else if(pCurPage->u8FocusItem == 1) 
-				{
-
-
-				}
-			}
-			else 	 
-			{
-			}
-			
-		}
-		break;
-		
-	case	PAGE_MENU_UPG: //升级
-		
-		if(eKeyType == KEY_FRONT)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_FRONT;
-	
-			//显示主页面
-			Show_Page(PAGE_FRONT);
-		}
-		else if(eKeyType == KEY_LEFT)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_LEFT;
-	
-			//显示主页面
-			Show_Page(PAGE_LEFT);
-		}
-		else if(eKeyType == KEY_RIGHT)	//遥控器消息:电源
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_RIGHT;
-	
-			//显示主页面
-			Show_Page(PAGE_RIGHT);
-		}
-		else if(eKeyType == KEY_REAR)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_REAR;
-	
-			//显示主页面
-			Show_Page(PAGE_REAR);
-		}			
-		else{
-		}
-		break;
-		
-	case	PAGE_MENU_ADVANCEDFUNC: //升级
-		
-		if(eKeyType == KEY_FRONT)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_FRONT].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_FRONT;
-	
-			//显示主页面
-			Show_Page(PAGE_FRONT);
-		}
-		else if(eKeyType == KEY_LEFT)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_LEFT].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_LEFT;
-	
-			//显示主页面
-			Show_Page(PAGE_LEFT);
-		}
-		else if(eKeyType == KEY_RIGHT)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_RIGHT].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_RIGHT;
-	
-			//显示主页面
-			Show_Page(PAGE_RIGHT);
-		}
-		else if(eKeyType == KEY_REAR)	
-		{
-			//记录父页面号
-			tPage_Flow.aPage[PAGE_REAR].u8ParentPageId = PAGE_DEFAULT;
-	
-			//修改屏状态机当前页面为主页面
-			tUIFsm.u8CurrentPage = PAGE_REAR;
-	
-			//显示主页面
-			Show_Page(PAGE_REAR);
-		}			
-		else{
-		}
-		break;
-	default:
-		break;
-			
-	}
-}
-
-
-/*!
- * 显示页面
- * \n
- *
- * @param u8PageType	页面类型
- * \n
- * @see
- */
-void	Show_Page(u8 u8PageType)
-{
-	volatile	u8	i = 0;
-	
-	tPAGE *pPage = NULL;
-
-	//页面合法性检查
-	if( u8PageType < PAGE_DEFAULT || u8PageType > PAGE_TYPE_END )
-		return;
-
-	//首先清除显存内容，填充底色
-//	memset(menu_Buf, 0xFF, 466*480*2);
-//	BitBlt_Raw(WIN_START_X, WIN_START_Y, WIN_WITDTH, WIN_HEIGHT, 0, 0, menu_Buf);
-
-	//得到当前页面指针
-	pPage = &(tPage_Flow.aPage[u8PageType]);
-
-	//显示视频画面
-	Show_View(pPage->eViewType);
-
-	//显示标题栏
-	if(pPage->eTitle != TITLE_NON)
-	{
-		Show_Title(pPage->eTitle);
-	}
-
-	//其他类型页面，显示项目
-	if( pPage->pItems != NULL )
-	{
-		for(i = 0; i <= 3; i++)
-		{
-			if(i == pPage->u8FocusItem && pPage->u8FocusItem != 0xFF)
-			{
-				Show_Item( u8PageType, i, 1 );
-			}
-			else
-			{
-				Show_Item( u8PageType, i, 0 );
-			}
-		}
-	}
-
-
-	//显示按钮
-	if( pPage->pButtons != NULL )
-	{
-		for(i = 0; i < pPage->u8ButtonCnt; i++)
-		{
-			if(pPage->u8FocusButton == i)
-			{
-				Show_Button( u8PageType, i, 1 );
-			}
-			else
-			{
-				Show_Button( u8PageType, i, 0 );
-			}
-		}
-	}
-
-    edmaWarpImgCpy4(myBopTaskCtxt.hEdma, (void *)(tpHandle.outputBuffer), (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer0),
-		736*2, 480, 736*2, 736*2);//liuxu, 06/17/2014.
-}
-
-#if 0
-/*!
- * 显示视频画面
- * \n
- *
- * @param eViewType
- * \n
- * @see
- */
-void Show_View(eVIEWTYPE eViewType)
-{
-	//以下拼接显示画面Buffer后，DMA传输送交显示
-	tREGION *ptRegion;
-
-	ptRegion = &aViewRegion[eViewType];
-
-	switch(eViewType)
-	{
-	case	VIEW_FRONT:
-	case	VIEW_FONT_FULL:
-	case	VIEW_LEFT:
-	case	VIEW_LEFT_FULL:
-	case	VIEW_RIGHT:
-	case	VIEW_RIGHT_FULL:
-	case	VIEW_REAR:
-	case	VIEW_REAR_FULL:
-
-		//window 0: synthesis view
-		if(win_Width[0] != 0 && win_Height[0] != 0){
-			edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-				(void *)(srcBuf[0] + 736 * 2 * crop_startY[0] + crop_startX[0] * 2),
-				(void *)(tpHandle.outputBuffer + win_startX[0] * 2 + 736 * 2 * win_startY[0]),
-				win_Width[0] *2, win_Height[0], 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
-		}
-		
-		//window 1: single camera view
-		if(win_Width[1] != 0 && win_Height[1] != 0){
-			edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-				(void *)(srcBuf[1] + 736 * 2 * crop_startY[1] + crop_startX[1] * 2),
-				(void *)(tpHandle.outputBuffer + win_startX[1] * 2 + 736 * 2 * win_startY[1]),
-				win_Width[1] *2, win_Height[1], 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
-		}
-		//window 2: car box
-		if(win_Width[2] != 0 && win_Height[2] != 0){
-			edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-				(void *)(srcBuf[2]	+ 736 * 2 * crop_startY[2] + crop_startX[2] * 2),
-				(void *)(tpHandle.outputBuffer + win_startX[2] * 2 + 736 * 2 * win_startY[2]),
-				win_Width[2] * 2, win_Height[2], win_Width[2] * 2, 736*2);//liuxu, 02/20/2014, for Y logo.
-		}
-
-		//window 3: osd
-		if(win_Width[3] != 0 && win_Height[3] != 0){
-			edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-				(void *)(srcBuf[3] + 736 * 2 * crop_startY[3] + crop_startX[3] * 2),
-				(void *)(tpHandle.outputBuffer + win_startX[3] * 2 + 736 * 2 * win_startY[3] ),
-				win_Width[3] * 2, win_Height[3], 480*2, 736*2);//liuxu, 06/17/2014.
-		}
-
-	
-		break;		
-
-
-	case	VIEW_AllVIEW:
-		BitBlt(&aViewRegion[SUBVIEW_SPLIT_00], VIDEO_BUF_FRONT);
-		BitBlt(&aViewRegion[SUBVIEW_SPLIT_01], VIDEO_BUF_LEFT);
-		BitBlt(&aViewRegion[SUBVIEW_SPLIT_10], VIDEO_BUF_RIGHT);
-		BitBlt(&aViewRegion[SUBVIEW_SPLIT_11], VIDEO_BUF_REAR);
- 		break;
-	case	VIEW_MENU:
-		BitBlt(&aViewRegion[SUBVIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
-		break;
-	default:
-		break;
-	}
-}
-#endif
-
-#if 1
-/*!
- * 显示视图页面
- * \n
- *
- * @param pView		图像视
- * \n
- * @see
- */
-void Show_View(eVIEWTYPE eViewType)
-{
-	switch(eViewType)
-	{
-	case	VIEW_FRONT:
-		BitBlt(SUBVIEW_SYSTHESIS, (tREGION*)&(aViewRegion[SUBVIEW_SYSTHESIS]), VIDEO_BUF_SYNTHESIS);
-		BitBlt(SUBVIEW_CAR, &aViewRegion[SUBVIEW_CAR], VIDEO_BUF_CAR);
-		BitBlt(SUBVIEW_SINGLEVIEW, &aViewRegion[SUBVIEW_SINGLEVIEW], VIDEO_BUF_FRONT);
-		BitBlt(SUBVIEW_TIPBAR, &aViewRegion[SUBVIEW_TIPBAR], VIDEO_BUF_TIPBAR);
-		break;
-	case	VIEW_FONT_FULL:
-		BitBlt(SUBVIEW_FULLSCREEN, &aViewRegion[SUBVIEW_FULLSCREEN], VIDEO_BUF_FRONT);
-		break;
-	case	VIEW_LEFT:
-		BitBlt(SUBVIEW_SYSTHESIS, &aViewRegion[SUBVIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
-		BitBlt(SUBVIEW_CAR, &aViewRegion[SUBVIEW_CAR], VIDEO_BUF_CAR);
-		BitBlt(SUBVIEW_SINGLEVIEW, &aViewRegion[SUBVIEW_SINGLEVIEW], VIDEO_BUF_LEFT);
-		BitBlt(SUBVIEW_TIPBAR, &aViewRegion[SUBVIEW_TIPBAR], VIDEO_BUF_TIPBAR);
-		break;
-	case	VIEW_LEFT_FULL:
-		BitBlt(SUBVIEW_FULLSCREEN, &aViewRegion[SUBVIEW_FULLSCREEN], VIDEO_BUF_LEFT);
-		break;
-	case	VIEW_RIGHT:
-		BitBlt(SUBVIEW_SYSTHESIS, &aViewRegion[SUBVIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
-		BitBlt(SUBVIEW_CAR, &aViewRegion[SUBVIEW_CAR], VIDEO_BUF_CAR);
-		BitBlt(SUBVIEW_SINGLEVIEW, &aViewRegion[SUBVIEW_SINGLEVIEW], VIDEO_BUF_RIGHT);
-		BitBlt(SUBVIEW_TIPBAR, &aViewRegion[SUBVIEW_TIPBAR], VIDEO_BUF_TIPBAR);
- 		break;
-	case	VIEW_RIGHT_FULL:
-		BitBlt(SUBVIEW_FULLSCREEN, &aViewRegion[SUBVIEW_FULLSCREEN], VIDEO_BUF_RIGHT);
-		break;
-	case	VIEW_REAR:
-		BitBlt(SUBVIEW_SYSTHESIS, &aViewRegion[SUBVIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
-		BitBlt(SUBVIEW_CAR, &aViewRegion[SUBVIEW_CAR], VIDEO_BUF_CAR);
-		BitBlt(SUBVIEW_SINGLEVIEW, &aViewRegion[SUBVIEW_SINGLEVIEW], VIDEO_BUF_REAR);
-		BitBlt(SUBVIEW_TIPBAR, &aViewRegion[SUBVIEW_TIPBAR], VIDEO_BUF_TIPBAR);
-		break;
-	case	VIEW_REAR_FULL:
-		BitBlt(SUBVIEW_FULLSCREEN, &aViewRegion[SUBVIEW_FULLSCREEN], VIDEO_BUF_REAR);
-		break;
-	case	VIEW_AllVIEW:
-//		BitBlt(SUBVIEW_SPLIT_00, &aViewRegion[SUBVIEW_SPLIT_00], VIDEO_BUF_FRONT);
-//		BitBlt(&aViewRegion[SUBVIEW_SPLIT_01], VIDEO_BUF_LEFT);
-//		BitBlt(&aViewRegion[SUBVIEW_SPLIT_10], VIDEO_BUF_RIGHT);
-//		BitBlt(&aViewRegion[SUBVIEW_SPLIT_11], VIDEO_BUF_REAR);
- 		break;
-	case	VIEW_MENU:
-		BitBlt(SUBVIEW_SYSTHESIS, &aViewRegion[SUBVIEW_SYSTHESIS], VIDEO_BUF_SYNTHESIS);
-		BitBlt(SUBVIEW_CAR, &aViewRegion[SUBVIEW_CAR], VIDEO_BUF_CAR);
-		break;
-	default:
-		break;
-	}
-}
+#else
+#define FRAME_WIDTH     720
+#define FRAME_HEIGHT    480
+#define FRAME_SIZE      518400//liuxu, 9/7/2013. (FRAME_WIDTH * FRAME_HEIGHT * 1.5)
+#define MAX_FRAMES      3//liuxu, 9/7/2013, help to deal with low mem???
+#define YUV_PIXEL_FMT   BC_PIX_FMT_NV12
+#define MAX_BUFFERS     3
+
+#define InterChannelIndexOffset 6//liuxu, 10/18/2013, to support 4 channels.
 #endif
 
 
-/*!
- * 显示列表
- * \n
- *
- * @param u8ItemIndex		项序号
- * @param u8PageType		页面类型
- * @param u8ShowType		高亮/常量显示
- * \n
- * @see
- */
-void	Show_Item(const u8 u8PageType, const u8 u8ItemIndex, u8 u8ShowType)
+static char *frame[MAX_FRAMES];
+static char *yuv_data = NULL;
+static int   fr_idx = 0;
+static int   bcdev_id = 0;
+static tex_buffer_info_t buf_info;
+
+int frame_init(bc_buf_params_t *p)
 {
-	tPAGE *pPage = NULL;
-	tITEM	*ptItem;
-	void *pSrc;
-	tREGION tRegion;
+    int   ii;
+#if 0//liuxu, 9/7/2013, use pointers from M3 through MMU. 
+    yuv_data = malloc(FRAME_SIZE * MAX_FRAMES);
+    if (yuv_data == NULL) {
+        fprintf(stdout, "no enough memory for input file\n");
+        return -1;
+    }
 
-	//得到当前页面指针
-	pPage = &(tPage_Flow.aPage[u8PageType]);
+    for (ii = 0; ii < MAX_FRAMES; ii++) {
+        frame[ii] = &yuv_data[ii * FRAME_SIZE];
+    }
+#endif 
+    if (p) {
+        p->count = MAX_FRAMES;
+        p->width = FRAME_WIDTH;
+        p->height = FRAME_HEIGHT;
+        p->fourcc = YUV_PIXEL_FMT;
 
-	ptItem = &pPage->pItems[u8ItemIndex];
-	if(ptItem == NULL)
-		return;
+#ifdef NO_MEMCPY
+        p->type = BC_MEMORY_USERPTR;//liuxu, 10/10/2013.
+#else
+        p->type = BC_MEMORY_MMAP;
+#endif
 
-	//判断显示亮度
-	if(u8ShowType == 0)
-		pSrc = (void*)aItem_YUV[ptItem->eItemType].pSrc_Normal;
-	else
-		pSrc = (void*)aItem_YUV[ptItem->eItemType].pSrc_Hilight;
+    }
 
-	//根据显示位置刷新到显存
-	tRegion.win_startX = ITEM_START_X;
-	tRegion.crop_startY = ITEM_START_Y(u8ItemIndex);
-	tRegion.win_Width = aItem_YUV[ptItem->eItemType].width;
-	tRegion.win_Height = aItem_YUV[ptItem->eItemType].height;
-	tRegion.crop_startX = 0;
-	tRegion.crop_startY = 0;
-	
-//	BitBlt(SUBVIEW_MENU, &tRegion, pSrc);	
-	BitBlt_Raw(ITEM_START_X, 
-				ITEM_START_Y(u8ItemIndex),
-				aItem_YUV[ptItem->eItemType].width,	
-				aItem_YUV[ptItem->eItemType].height,
-				0,
-				0, 
-				pSrc);
+    return 0;
+}
 
+char *frame_get(bc_buf_ptr_t *p)
+{
+    char *va;
+    va = frame[fr_idx];
+    pattern_uyvy(fr_idx, va, FRAME_WIDTH, FRAME_HEIGHT);
+    fr_idx = (fr_idx + 1) % MAX_FRAMES;
 
-	/*!
-	 * 显示底条
-	 *
-	 */
-	if(u8ShowType == 0)
-		pSrc = aBar_YUV.pSrc_Normal;
-	else
-		pSrc = aBar_YUV.pSrc_Hilight;
-		
-	tRegion.win_startX = ITEM_BAR_START_X;
-	tRegion.crop_startY = ITEM_BAR_START_Y(u8ItemIndex);
-	tRegion.win_Width = ITEM_BAR_WIDTH;
-	tRegion.win_Height = ITEM_BAR_HEIGHT;
-	tRegion.crop_startX = 0;
-	tRegion.crop_startY = 0;
-	
-//	BitBlt(SUBVIEW_MENU, &tRegion, pSrc); 
+    if (p)
+        p->pa = 0;
 
-	BitBlt_Raw(ITEM_BAR_START_X, 
-				ITEM_BAR_START_Y(u8ItemIndex),
-				ITEM_BAR_WIDTH,	
-				ITEM_BAR_HEIGHT,
-				0,
-				0, 
-				pSrc);
+    return va;
+}
 
-	/*!
-	 * 如果是焦点项，还要在左边显示提示箭头
-	 *
-	 */
-	if(u8ShowType == 1)
-	{
-		pSrc = yuv_tip_yuv;
-			
-		tRegion.win_startX = ITEM_TIP_START_X;
-		tRegion.crop_startY = ITEM_TIP_START_Y(u8ItemIndex);
-		tRegion.win_Width = ITEM_TIP_WIDTH;
-		tRegion.win_Height = ITEM_TIP_HEIGHT;
-		tRegion.crop_startX = 0;
-		tRegion.crop_startY = 0;
-		
-//		BitBlt(SUBVIEW_MENU, &tRegion, pSrc); 
-		BitBlt_Raw(ITEM_TIP_START_X, 
-			ITEM_TIP_START_Y(u8ItemIndex),
-			ITEM_TIP_WIDTH,	
-			ITEM_TIP_HEIGHT,
-			0,
-			0, 
-			pSrc);
-	}
-
-	/*!
-	 * 如果有执行结果，还需要显示结果状态图标
-	 *
-	 */
-	if(ptItem->u8Ret != RET_UNKOWN)
-	{
-		if(ptItem->u8Ret == RET_OK)
-		{
-			pSrc = yuv_ret_ok_yuv;
-		}
-		if(ptItem->u8Ret == RET_FAIL)
-		{
-			pSrc = yuv_ret_err_yuv;
-		}
-	
-		tRegion.win_startX = ITEM_RET_START_X;
-		tRegion.crop_startY = ITEM_RET_START_Y(u8ItemIndex);
-		tRegion.win_Width = ITEM_RET_WIDTH;
-		tRegion.win_Height = ITEM_RET_HEIGHT;
-		tRegion.crop_startX = 0;
-		tRegion.crop_startY = 0;
-		
-//		BitBlt(SUBVIEW_MENU, &tRegion, pSrc); 
-
-		BitBlt_Raw(ITEM_RET_START_X, 
-					ITEM_RET_START_Y(u8ItemIndex),
-					ITEM_RET_WIDTH,	
-					ITEM_RET_HEIGHT,
-					0,
-					0, 
-					pSrc);
-	}
+void frame_cleanup(void)
+{
+    if (yuv_data)
+        free(yuv_data);
 }
 
 
-/*!
- * 显示标题栏
- * \n
- *
- * \n
- * @see
- */
-void Show_Title(eTITLE eTitle)
+#ifdef GLES_20
+void drawCube(int bufferindex, int sidebufferindex)//liuxu, 06/02/2014, add second parameter for side view select.
 {
-//	tREGION tRegion;
-
-	//刷新黑色背景
-	BitBlt_Raw(270, 0, 736-270, 480, 0,0, menu_Buf);
-
-	//显示标题栏
-	BitBlt_Raw(TITLE_WIN_START_X,TITLE_WIN_START_Y,
-				aTitle_YUV[eTitle].width, aTitle_YUV[eTitle].height, 0,0,
-				aTitle_YUV[eTitle].pSrc);
-
-	//再显示分隔条
-	BitBlt_Raw(SEP_START_X,SEP_START_Y,SEP_WIDTH,SEP_HEIGHT,0,0,yuv_sep_yuv);
-}
+    static float rot_x = 0.0;
+    static float rot_y = 0.0;
+    float sx, cx, sy, cy;
+    int tex_sampler;
 
 
+#if 1    
+    /* rotate the cube */
+    sx = sin(rot_x);
+    cx = cos(rot_x);
+    sy = sin(rot_y);
+    cy = cos(rot_y);
+#else//liuxu, 10/12/2013, disable rotation because of floating point performance issue.
+    /* rotate the cube */
+    sx = (rot_x);
+    cx = (rot_x);
+    sy = (rot_y);
+    cy = (rot_y);
+#endif   
 
-/*!
- * 显示内容提交到显示缓区
- * \n
- *
- * @param pSrc
- * @param tRegion
- * \n
- * @see
- */
-void	BitBlt(eSUBVIEW eSubView, tREGION *ptRegion, void *pSrc)
-{
-	if((ptRegion == NULL) || (pSrc == NULL))
-		return;
+#ifndef DIRECT_SHOW//liuxu, 02/16/2014.
 
-	if((0 == ptRegion->win_Width) || (0 == ptRegion->win_Height))
-		return;
-
-	//window 0 : synthesis view
-	if(eSubView == SUBVIEW_SYSTHESIS) {
-		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-			(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
-			(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY),
-			ptRegion->win_Width *2, ptRegion->win_Height, 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
-	}
-	//window 2: car box
-	else if(eSubView == SUBVIEW_CAR) {
-		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-			(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
-			(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY),
-			ptRegion->win_Width *2, ptRegion->win_Height, ptRegion->win_Width*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
-	}
-	//window 1: single camera view
-	else if(eSubView == SUBVIEW_SINGLEVIEW) {
-		//window 1: single camera view
-		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-			(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
-			(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY),
-			ptRegion->win_Width *2, ptRegion->win_Height, 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
-	}
-	else if(eSubView == SUBVIEW_FULLSCREEN) {
-		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-			(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
-			(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY),
-			ptRegion->win_Width *2, ptRegion->win_Height, 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
-	}
-	//window 3: osd
-	else if(eSubView == SUBVIEW_TIPBAR) {
-		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-			(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
-			(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY),
-			ptRegion->win_Width *2, ptRegion->win_Height, 480*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
-	}
-	else {
-		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-			(void *)(pSrc + 736 * 2 * ptRegion->crop_startY + ptRegion->crop_startX * 2),
-			(void *)(tpHandle.outputBuffer + ptRegion->win_startX * 2 + 736 * 2 * ptRegion->win_startY),
-			ptRegion->win_Width *2, ptRegion->win_Height, ptRegion->win_Width*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
-
-	}
-}
+    modelview[0] = cy;
+    modelview[1] = 0;
+    modelview[2] = -sy;
+    modelview[4] = sy * sy;
+    modelview[5] = cx;
+    modelview[6] = cy * sx;
+    modelview[8] = sy * cx;
+    modelview[9] = -sx;
+    modelview[10] = cx * cy;
+#endif   
 
 
-/*!
- * 原始格式刷新显存
- * \n
- *
- * @param crop_startX
- * @param crop_startY
- * @param pSrc
- * @param win_Height
- * @param win_startX
- * @param win_startY
- * @param win_Width
- * \n
- * @see
- */
-void	BitBlt_Raw(int win_startX, int win_startY, int win_Width, int win_Height, int crop_startX, int crop_startY, void *pSrc)
-{
-	if(pSrc == NULL)
-		return;
-	
-	edmaWarpImgCpy4(
-		myBopTaskCtxt.hEdma,
-		(void *)(pSrc + 736 * 2 * crop_startY + crop_startX * 2),
-		(void *)(tpHandle.outputBuffer + win_startX * 2 + 736 * 2 * win_startY ),
-		win_Width * 2, 
-		win_Height, 
-		win_Width*2, 736*2
-		);//liuxu, 06/17/2014.
-}
+    glClearColor (0.0, 0.0, 0.0, 1.0);
 
-/*!
- * 显示按钮
- * \n
- *
- * @param u8ButtonIndex
- * @param u8Page
- * @param u8ShowType
- * \n
- * @see
- */
-void	Show_Button(u8 u8Page, u8 u8ButtonIndex, u8 u8ShowType)
-{
+    
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 
-}
 
+#ifndef DIRECT_SHOW
+
+    glUseProgram(program[0]);
+   
+    glUniformMatrix4fv(model_view_idx[0], 1, GL_FALSE, modelview);
+    glUniformMatrix4fv(proj_idx[0], 1, GL_FALSE, projection);
+
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 8);
+    glDrawArrays(GL_TRIANGLE_STRIP, 8, 8);
 #endif
 
 
+    /* associate the stream texture */
+    tex_sampler = glGetUniformLocation(program[1], "streamtexture");
 
 
-/*******************************************************************************
- *                           Function Declaration                              *
- ******************************************************************************/
 
-//void InitParams(SV_Global_CreationParamsStruct* svGlobalCP, TPstruct* tp);
-//void ProcessArgs(int argc, char *argv[], TPstruct* tp);
-//void SaveToneCurve(TPstruct *tp, svPAlignStruct *sv);
-//void edmaWarpImgCpy4(EDMA3_DRV_Handle hEdma, void *srcBuf, void *dstBuf, Uint32 width, Uint32 height, Uint32 user_srcbidx, Uint32 user_desbidx)//liuxu, 02/13/2014.
+    glUseProgram(program[1]);
 
-void TI_dsp_Processing(UArg arg0, UArg arg1);//liuxu, 01/22/2014, China port.
-int main(void);
-Void dspAppTask(UArg arg0, UArg arg1);
 
+    if (ptex_objs) {
 
-/*******************************************************************************
- *                           Function implementation                           *
- ******************************************************************************/
+    
+        /* activate texture unit */
+        glActiveTexture(GL_TEXTURE0);
 
-/*************************************************************************
- *  @func       spiFlashRead
- *
- *  @brief      API to read into buffer from SPI flash.
- *
- *  @param[in]  offset : argument 0
- *  @param[in]  len : argument 1
- *  @param[out]  buffer_address : argument 2
- *
- *  @returns    1:success
- *  			0:fail
- ************************************************************************/
-int spiFlashRead(unsigned int offset, unsigned int len, char * buffer_address)
-{
-   unsigned int bus = 0;
-   struct spi_flash *flash = 0;
 
-   unsigned int cs = 0;
-   unsigned int speed = CONFIG_SF_DEFAULT_SPEED;
-   unsigned int mode = CONFIG_SF_DEFAULT_MODE;
+        
+        glBindTexture(GL_TEXTURE_STREAM_IMG, ptex_objs[bufferindex]);
 
-   if(len > 65536)
-	   return -1;
+   
+        /* associate the sampler to a texture unit
+         * 0 matches GL_TEXTURE0 */
+        glUniform1i(tex_sampler, 0);
+   
+        glUniformMatrix4fv(model_view_idx[1], 1, GL_FALSE, modelview);
+        glUniformMatrix4fv(proj_idx[1], 1, GL_FALSE, projection);
 
-   static Byte buffer_addr[65536];
-   memset(buffer_addr, 0, 65536);
 
+#ifndef DIRECT_SHOW
 
-   int ret;
-   if(offset < SRV_PARAM_START_ADDR || offset > SRV_PARAM_END_ADDR )
-   {
-	   return 0;
-   }
-
-   unsigned int i = 0;
-   char temp = 0;
-   unsigned int * pCmAlwonSpiClkctrl = CM_ALWON_SPI_CLKCTRL;
-   *(pCmAlwonSpiClkctrl) = 0x2;//liuxu, 06/18/2014, enable the spi register clk byself, because kernel would disable it(uboot enabled it actually) by default. Pinmux is under control by ROM(SPI boot) or uboot/kernel.
-
-   //probe flash
-   flash = spi_flash_probe(bus, cs, speed, mode);
-   if (!flash)  {
-         printf("Failed to initialize SPI flash at %u:%u\n", bus, cs);
-         return 0;
-   }
-
-   ret = spi_flash_read(flash, offset, 4096, buffer_addr);
-   if (ret) {
-         printf("SPI flash read failed\n");
-         return 0;
-   }
-
-   if(flash->type == 0xef) //winbond
-   {
-	   /*if write 0x00123456, which in bytes 0x56 0x34 0x12 0x00, then read from flash,
-	    * it becomes 0x00 0x12 0x34 0x56*/
-	   for(i= 0 ; i< 65536/4; i++)
-	   {
-		   temp = buffer_addr[3+i*4]; buffer_addr[3+i*4] = buffer_addr[0+i*4]; buffer_addr[0+i*4] = temp;
-		   temp = buffer_addr[2+i*4]; buffer_addr[2+i*4] = buffer_addr[1+i*4]; buffer_addr[1+i*4] = temp;
-	   }
-   }
-
-   memcpy(buffer_address,buffer_addr, len);
-
-   System_printf("\nliuxu, 06/18/2014, test of spi flash done.\n");
-   spi_flash_free(flash);
-   return 1;
-}
-
-/*************************************************************************
- *  @func       spiFlashWrite
- *
- *  @brief      API to write from buffer to SPI flash.
- *
- *  @param[in]  offset : argument 0
- *  @param[in]  len : argument 1
- *  @param[out]  buffer_address : argument 2
- *
- *  @returns    1:success
- *  			0:fail
- ************************************************************************/
-int spiFlashWrite(unsigned int offset, unsigned int len, char * buffer_address)
-{
-   unsigned int bus = 0;
-   struct spi_flash *flash = 0;
-   unsigned int cs = 0;
-   unsigned int speed = CONFIG_SF_DEFAULT_SPEED;
-   unsigned int mode = CONFIG_SF_DEFAULT_MODE;
-
-   if(len > 65536)
-	   return -1;
-
-   static Byte buffer_addr[65536];
-   memset(buffer_addr, 0, 65536);
-   Byte * Buffer_pointer = NULL;
-   int ret;
-
-   unsigned int i = 0;
-   unsigned int j = 0;
-   char temp = 0;
-   unsigned int * pCmAlwonSpiClkctrl = CM_ALWON_SPI_CLKCTRL;
-   *(pCmAlwonSpiClkctrl) = 0x2;//liuxu, 06/18/2014, enable the spi register clk byself, because kernel would disable it(uboot enabled it actually) by default. Pinmux is under control by ROM(SPI boot) or uboot/kernel.
-
-   if(offset < SRV_PARAM_START_ADDR || offset > SRV_PARAM_END_ADDR )   {
-	   return 0;
-   }
-
-   //probe flash
-   flash = spi_flash_probe(bus, cs, speed, mode);
-   if (!flash)
-   {
-         printf("Failed to initialize SPI flash at %u:%u\n", bus, cs);
-         return 0;
-   }
-
-   ret = spi_flash_read(flash, offset, 65536, buffer_addr);
-
-   if(flash->type == 0xef) //winbond
-   {
-   	   /*if write 0x00123456, which in bytes 0x56 0x34 0x12 0x00, then read from flash,
-   	    * it becomes 0x00 0x12 0x34 0x56*/
-   	   for(i= 0 ; i< 65536/4; i++)
-   	   {
-   		   temp = buffer_addr[3+i*4]; buffer_addr[3+i*4] = buffer_addr[0+i*4]; buffer_addr[0+i*4] = temp;
-   		   temp = buffer_addr[2+i*4]; buffer_addr[2+i*4] = buffer_addr[1+i*4]; buffer_addr[1+i*4] = temp;
-   	   }
-   }
-   if (ret) {
-	   printf("SPI flash read failed\n");
-	   return 0;
-   }
-
-
-   System_printf("\nliuxu, 06/18/2014, %u KiB %s at %u:%u is now current device\n",flash->size >> 10, flash->name, bus, cs);
-
-   ret = spi_flash_erase(flash, offset, 65536 ); /*page size*page per sector 256*256*/
-   if (ret) {
-         printf("SPI flash erase failed\n");
-         return 0;
-   }
-
-   memcpy(buffer_addr, buffer_address, len);
-
-   ret = spi_flash_write(flash, offset, 65536, buffer_addr );
-   if (ret) {  printf("SPI flash write failed\n");
-         return 0;
-   }
-
-   spi_flash_free(flash);
-   return 1;
-
-}
-
-
-int spiFlashErase(unsigned int offset, unsigned int len)
-{
-   unsigned int bus = 0;
-   struct spi_flash *flash = 0;
-   unsigned int cs = 0;
-   unsigned int speed = CONFIG_SF_DEFAULT_SPEED;
-   unsigned int mode = CONFIG_SF_DEFAULT_MODE;
-
-   if(len > 65536)
-	   return -1;
-
-   static Byte buffer_addr[65536];
-   memset(buffer_addr, 0, 65536);
-   Byte * Buffer_pointer = NULL;
-   int ret;
-
-   unsigned int i = 0;
-   unsigned int j = 0;
-   char temp = 0;
-   unsigned int * pCmAlwonSpiClkctrl = CM_ALWON_SPI_CLKCTRL;
-   *(pCmAlwonSpiClkctrl) = 0x2;//liuxu, 06/18/2014, enable the spi register clk byself, because kernel would disable it(uboot enabled it actually) by default. Pinmux is under control by ROM(SPI boot) or uboot/kernel.
-
-   if(offset < SRV_PARAM_START_ADDR || offset > SRV_PARAM_END_ADDR )   {
-	   return 0;
-   }
-
-   //probe flash
-   flash = spi_flash_probe(bus, cs, speed, mode);
-   if (!flash)
-   {
-         printf("Failed to initialize SPI flash at %u:%u\n", bus, cs);
-         return 0;
-   }
-
-   System_printf("\nliuxu, 06/18/2014, %u KiB %s at %u:%u is now current device\n",flash->size >> 10, flash->name, bus, cs);
-
-   ret = spi_flash_erase(flash, offset, 65536 ); /*page size*page per sector 256*256*/
-   if (ret) {
-         printf("SPI flash erase failed\n");
-         return 0;
-   }
-
-   spi_flash_free(flash);
-   return 1;
-
-}
-
-
-/*************************************************************************
- *  @func       allocSlaveTaskMgrCtxt_Lite
- * 
- *  @brief      Perform IPC init with other cores.
- *
- *  @param[in]  
- * 
- *  @returns    ecNone
- *              ecFail
- ************************************************************************/
-static void *allocSlaveTaskMgrCtxt_Lite(void)
-{
-    slaveTaskMgrCtxt_t *pSlaveTaskMgrCtxt = NULL_VALUE;
-
-    do {
-        MEM_ALLOC(pSlaveTaskMgrCtxt, slaveTaskMgrCtxt_t);
-        if (NULL == pSlaveTaskMgrCtxt) {
-            System_printf("\n%s: %d: DSP_LITE_Slave Task Manager context allocation failed. \n", __FUNCTION__, __LINE__);
-            break;
-        }
-    } while(0);
-    return ((void *) pSlaveTaskMgrCtxt);
-}
-
-
-/*************************************************************************
- *  @func       INVALIDATE_DSP_CACHE
- *
- *  @brief      Writeback cache,
- *  			call this function before copy from memory to memory
- *
- *  @returns    none
- ************************************************************************/
-inline void INVALIDATE_DSP_CACHE()
-{
-	L1DWB = 0x1u;
-	while((L1DWB & 1)!=0);
-	L2WB = 0x1u;
-	while((L2WB & 1)!=0);
-	L1PINV = 0x1u;
-	while((L1PINV & 1)!=0);
-}
-
-#if 1
-static void layoutChange(int layoutid, cfg4Pointers_t *pFrom_VPSS_M3_TempCmdMsg)
-{
-//		static int curLayoutId = MSG_FRONT;
-
-		pVideoBuf_Synthesis = tpHandle.synthesisBuffer;
-
-		pVideoBuf_Front = pFrom_VPSS_M3_TempCmdMsg->pPointer0;  ///前视
-		pVideoBuf_Left = pFrom_VPSS_M3_TempCmdMsg->pPointer1;	///左视
-		pVideoBuf_Right = pFrom_VPSS_M3_TempCmdMsg->pPointer2;	///右视
-		pVideoBuf_Rear = pFrom_VPSS_M3_TempCmdMsg->pPointer3;	///后视
-
-		switch(layoutid) {
-			case	0:
-				tUIFsm.u8CurrentPage = PAGE_FRONT;
-				break;
-			case	1:
-				tUIFsm.u8CurrentPage = PAGE_LEFT;
-				break;
-			case	2:
-				tUIFsm.u8CurrentPage = PAGE_RIGHT;
-				break;
-			case	3:
-				tUIFsm.u8CurrentPage = PAGE_REAR;
-				break;
-			case	4:
-				tUIFsm.u8CurrentPage = PAGE_MENU;
-				break;
-			default:
-				break;
-		}
-
-}
-#endif
-
-#if 0
-/*************************************************************************
- *  @func       INVALIDATE_DSP_CACHE
- *
- *  @param[in]  layoutid: id identify which layout to use
- *  @param[in]  pFrom_VPSS_M3_TempCmdMsg: structure included the pointer
- *              pointed to image data for four camera in
- *  @brief      Specify the position of each sub window,
- *  			call this function to change GUI layout
- *
- *  @returns    none
- ************************************************************************/
-static void layoutChange(int layoutid, cfg4Pointers_t *pFrom_VPSS_M3_TempCmdMsg)
-{
-/*
-	界面布局说明：
-	curLayoutId     界面
-	0				全景+前视
-	1				全景+左视
-	2				全景+右视
-	3				后视
-	4				前视
-	5				左视
-	6 				右视
-	7				四路视频
-*/
-
-	/*
-	 *  srcBuf[0] ：左边视图，全景
-	 *  srcBuf[1]：右上视图
-	 *  srcBuf[2]：左中视图，车标
-	 *  srcBuf[3]：右下视图，提示栏
-	 */
-	static int curLayoutId = MSG_FRONT;
-	srcBuf[0] = tpHandle.synthesisBuffer;
-	//update srcBuf
-	if((curLayoutId == MSG_FRONT) || (curLayoutId == MSG_FRONT_FULLVIEW)) {
-/*
-		srcBuf[1] = memRearCamAfterFishEyeCorrection;
-		//srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer0;
-*/
-		srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer0;  ///前视
-	}
-	else if((curLayoutId == MSG_RIGHT) || (curLayoutId == MSG_RIGHT_FULLVIEW))	srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer2;	///右视
-	else if((curLayoutId == MSG_LEFT) || (curLayoutId == MSG_LEFT_FULLVIEW))	srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer1;	///左视
-	else if(curLayoutId == MSG_REAR) 		srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer3;	///后视
-	else		srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer0;	///前视
-
-
-#if 0  ///gzd, add channel
-	if(curLayoutId == 0){
-/*
-		srcBuf[1] = memRearCamAfterFishEyeCorrection;
-		//srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer0;
-*/
-		srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer0;
-	}
-	else if(curLayoutId == 1)		srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer1;
-	else if(curLayoutId == 2)		srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer2;
-	else if(curLayoutId == 3)		srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer3;
-	else		srcBuf[1] = pFrom_VPSS_M3_TempCmdMsg->pPointer0;
-#endif
-
-	srcBuf[2] = yuv_car_yuv;//Carbox_80_240;
-	srcBuf[3] = OSD_400_224;
-
-
-	/*
-	 * test
-	 */
-/*
-
-	srcBuf[4] = title_yuv;//capture3_yuv;
-	srcBuf[5] = yuv_sep_yuv;
-	srcBuf[6] = step1_yuv;
-	srcBuf[7] = s2_yuv;
-	srcBuf[8] = s3_yuv;
-
-*/
-
-
-	if(curLayoutId == layoutid)
-		return;
-	else{
-		curLayoutId = layoutid;
-		memset((void *)tpHandle.outputBuffer, 0x00, 736*480*2);
-	}
-
-//	gzd, 20150415,裁剪的位置及大小，需要根据实际效果调整
-	System_printf(" [DSP]: view curLayoutId = %d ", curLayoutId);
-
-
-#if 0
-	if(curLayoutId == MSG_FRONT) {
-//		memset((void *)tpHandle.outputBuffer, 0x19, 736*480*2);
-//		memset((void *)menu_Buf, 0x10, 466*480*2);
-//		前摄像头全屏显示
-		//synthesis image
-		win_startX[0] = 0,win_startY[0] = 0,win_Width[0] = 320,win_Height[0] = 480;
-		crop_startX[0] = 24, crop_startY[0] = 0;
-		//single camera view
-		win_startX[1] = 270, win_startY[1] = 0,win_Width[1] = 736 - 270,win_Height[1] = 480;
-		crop_startX[1] = 90, crop_startY[1] = 60;
-		//car box
-		win_startX[2] = 120 + win_startX[0] - crop_startX[0], win_startY[2] = 120,win_Width[2] = 80,win_Height[2] = 240;
-		crop_startX[2] = 0, crop_startY[2] = 0;
-
-		//自定义界面，400*80
-		win_startX[4] = 270,win_startY[4] = 0,win_Width[4] = 132,win_Height[4] = 60;
-			crop_startX[4] = 0, crop_startY[4] = 0;
-
-		win_startX[5] = 270,win_startY[5] = 61, win_Width[5] = 736 - 270,win_Height[5] = 7;
-		crop_startX[5] = 0, crop_startY[5] = 0;
-
-		win_startX[6] = 270 + 50,win_startY[6] = 100,win_Width[6] = 322,win_Height[6] = 48;
-		crop_startX[6] = 0, crop_startY[6] = 0;
-
-		win_startX[7] = 270 + 50,win_startY[7] = 170,win_Width[7] = 322,win_Height[7] = 48;
-		crop_startX[7] = 0, crop_startY[7] = 0;
-
-		win_startX[8] = 270 + 50,win_startY[8] = 240,win_Width[8] = 322,win_Height[8] = 48;
-		crop_startX[8] = 0, crop_startY[8] = 0;
-//		//背景
-		win_startX[9] = 270,win_startY[9] = 0,win_Width[9] = 736 - 270,win_Height[9] = 480;
-		crop_startX[9] = 0, crop_startY[9] = 0;
-
-//			win_startX[4] = 200,win_startY[4] = 10,win_Width[4] = 358,win_Height[4] = 56;
-//				crop_startX[4] = 0, crop_startY[4] = 0;
-		//测试车标
-//		win_startX[4] = 200,win_startY[4] = 200,win_Width[4] = 80,win_Height[4] = 240;
-//		crop_startX[4] = 0, crop_startY[4] = 0;
-
-
-	}
+        glDrawArrays (GL_TRIANGLE_STRIP, 0, 8);
+        glDrawArrays (GL_TRIANGLE_STRIP, 8, 8);
 #else
 
-	if(curLayoutId == MSG_FRONT)	{
-//全景+前视
-		//synthesis image
-		win_startX[0] = 0,win_startY[0] = 0,win_Width[0] = 320,win_Height[0] = 480;
-		crop_startX[0] = 24, crop_startY[0] = 0;
-		//single camera view
-		win_startX[1] = 270, win_startY[1] = 0,win_Width[1] = 736 - 270,win_Height[1] = 400;
-		crop_startX[1] = 90, crop_startY[1] = 60;
-		//car box
-		win_startX[2] = 120 + win_startX[0] - crop_startX[0], win_startY[2] = 120,win_Width[2] = 80,win_Height[2] = 240;
-		crop_startX[2] = 0, crop_startY[2] = 0;
-		//OSD
-		win_startX[3] = 270, win_startY[3] = 400,win_Width[3] = 480,win_Height[3] = 80;
-		crop_startX[3] = 20, crop_startY[3] = 0;
-/**
-		//synthesis image 全景
-		win_startX[0] = 0,win_startY[0] = 0,win_Width[0] = 320,win_Height[0] = 480;
-		crop_startX[0] = 0, crop_startY[0] = 0;  //原始图像裁剪开始位置
-		//single camera view
-		win_startX[1] = 320, win_startY[1] = 0,win_Width[1] = 736 - 320,win_Height[1] = 400;
-		crop_startX[1] = 160, crop_startY[1] = 40;
-		//car box
-		win_startX[2] = 120 + win_startX[0], win_startY[2] = 120,win_Width[2] = 80,win_Height[2] = 240;
-		crop_startX[2] = 0, crop_startY[2] = 0;
-		//OSD
-		win_startX[3] = 320, win_startY[3] = 400,win_Width[3] = 400,win_Height[3] = 80;
-		crop_startX[3] = 40, crop_startY[3] = 0;
-**/
-/*
-        	全景图片   |	单视图
-                  | ————
-                  | TI logo,height=80
-*/
-	}
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, cube_vertices);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, cube_tex_coords);
+        glUniformMatrix4fv(model_view_idx[1], 1, GL_FALSE, modelview);
+
+        glDrawArrays (GL_TRIANGLES, 0, 6);//liuxu, 02/16/2014.//liuxu, 06/03/2014, disable the gfx0 pipeline in run-time will block this function under flip mode...RISK...
+//printf("\n14\n");
+        #ifdef SIDE_VIEW//liuxu, 06/02/2014.
+        glBindTexture(GL_TEXTURE_STREAM_IMG, ptex_objs[sidebufferindex]);
+        glDrawArrays (GL_TRIANGLES, 6, 6);//liuxu, 02/16/2014.
+        #endif
+
+        //sleep(1);
+
+        //glFinish();//liuxu, 02/19/2014.
+
+        #ifdef TINY_CUBE//liuxu, 02/18/2014.
+
+        #define MY_DISPLAY_WIDTH (704.0)//liuxu, 04/21/2014, change from 720 to 704 due to "eglCreateWindowSurface" can not work under 720/32=22.5.
+        #define MY_DISPLAY_HEIGHT (480.0)
+        #define TINY_CUBE_LINE (90.0)
+
+        float my_ratio1 = TINY_CUBE_LINE/MY_DISPLAY_HEIGHT;
+        float my_ratio2 = MY_DISPLAY_HEIGHT/MY_DISPLAY_WIDTH;
+
+        
+        modelview_tiny[0] = cy*my_ratio1*my_ratio2;
+        modelview_tiny[1] = 0;
+        modelview_tiny[2] = -sy*my_ratio1;
+        modelview_tiny[4] = sy * sy*my_ratio1*my_ratio2;
+        modelview_tiny[5] = cx*my_ratio1;
+        modelview_tiny[6] = cy * sx*my_ratio1;
+        modelview_tiny[8] = sy * cx*my_ratio1*my_ratio2;
+        modelview_tiny[9] = -sx*my_ratio1;
+        modelview_tiny[10] = cx * cy*my_ratio1;
+
+
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, cube_vertices_tiny);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, cube_tex_coords_tiny);
+
+        glUniformMatrix4fv(model_view_idx[1], 1, GL_FALSE, modelview_tiny);
+
+        glDrawArrays (GL_TRIANGLE_STRIP, 0, 8);
+        glDrawArrays (GL_TRIANGLE_STRIP, 8, 8);
+
+        rot_x += 0.01;
+        rot_y += 0.01;
+
+        //sleep(1);
+
+
+        #endif
 #endif
-	else if(curLayoutId == MSG_LEFT) {
-		//全景+左视
-		//synthesis image
-		win_startX[0] = 400,win_startY[0] = 0,win_Width[0] = 320,win_Height[0] = 480;
-		crop_startX[0] = 0, crop_startY[0] = 0;
-		//single camera view
-		win_startX[1] = 0, win_startY[1] = 0,win_Width[1] = 736 - 320,win_Height[1] = 480;
-		crop_startX[1] = 90, crop_startY[1] = 0;
-		//car box
-		win_startX[2] = 120 + win_startX[0], win_startY[2] = 120,win_Width[2] = 80,win_Height[2] = 240;
-		crop_startX[2] = 0, crop_startY[2] = 0;
-		//OSD
-		win_startX[3] = 320, win_startY[3] = 400,win_Width[3] = 0,win_Height[3] = 0;
-		crop_startX[3] = 0, crop_startY[3] = 0;
 
-/*
-		  全景图片   |	单视图
-				  | ————
-				  | TI logo,height=80
-*/
-	} else if(curLayoutId == MSG_RIGHT) {
-//		全景+右视
-		//synthesis image
-		win_startX[0] = 0,win_startY[0] = 0,win_Width[0] = 320,win_Height[0] = 480;
-		crop_startX[0] = 24, crop_startY[0] = 0;
-		//single camera view
-		win_startX[1] = 270, win_startY[1] = 0,win_Width[1] = 736 - 270,win_Height[1] = 400;
-		crop_startX[1] = 90, crop_startY[1] = 60;
-		//car box
-		win_startX[2] = 120 + win_startX[0] - crop_startX[0], win_startY[2] = 120,win_Width[2] = 80,win_Height[2] = 240;
-		crop_startX[2] = 0, crop_startY[2] = 0;
-		//OSD
-		win_startX[3] = 270, win_startY[3] = 400,win_Width[3] = 480,win_Height[3] = 80;
-		crop_startX[3] = 20, crop_startY[3] = 0;
-/*
-			全景图片   |	单视图
-				  | ————
-				  | TI logo,height=80
-*/
-	} else if(curLayoutId == MSG_REAR) {
-///倒车后视单摄像头全画面
-		//synthesis image
-		win_startX[0] = 0,win_startY[0] = 0,win_Width[0] = 0,win_Height[0] = 0;
-		crop_startX[0] = 0, crop_startY[0] = 0;
-		//single camera view
-		win_startX[1] = 0, win_startY[1] = 0,win_Width[1] = 736 ,win_Height[1] = 480;
-		crop_startX[1] = 0, crop_startY[1] = 0;
-		//car box
-		win_startX[2] = 120 + win_startX[0], win_startY[2] = 120,win_Width[2] = 0,win_Height[2] = 0;
-		crop_startX[2] = 0, crop_startY[2] = 0;
-		//OSD
-		win_startX[3] = 320, win_startY[3] = 400,win_Width[3] = 0,win_Height[3] = 0;
-		crop_startX[3] = 0, crop_startY[3] = 0;
+    }
 
-	}
-	else if(curLayoutId == MSG_FRONT_FULLVIEW) {
-//		前摄像头全屏显示
-		//synthesis image
-		win_startX[0] = 0,win_startY[0] = 0,win_Width[0] = 0,win_Height[0] = 0;
-		crop_startX[0] = 0, crop_startY[0] = 0;
-		//single camera view
-		win_startX[1] = 0, win_startY[1] = 0,win_Width[1] = 736,win_Height[1] = 480;
-		crop_startX[1] = 0, crop_startY[1] = 0;
-		//car box
-		win_startX[2] = 0, win_startY[2] = 0,win_Width[2] = 0,win_Height[2] = 0;
-		crop_startX[2] = 0, crop_startY[2] = 0;
-		//OSD
-		win_startX[3] = 0, win_startY[3] = 0,win_Width[3] = 0,win_Height[3] = 0;
-		crop_startX[3] = 0, crop_startY[3] = 0;
+    eglSwapBuffers(dpy, surface);
 
-	}
-	else if(curLayoutId == MSG_LEFT_FULLVIEW) {
-//		左摄像头全屏显示
-	//synthesis image
-		win_startX[0] = 0,win_startY[0] = 0,win_Width[0] = 0,win_Height[0] = 0;
-		crop_startX[0] = 0, crop_startY[0] = 0;
-		//single camera view
-		win_startX[1] = 0, win_startY[1] = 0,win_Width[1] = 736,win_Height[1] = 480;
-		crop_startX[1] = 0, crop_startY[1] = 0;
-		//car box
-		win_startX[2] = 0, win_startY[2] = 0,win_Width[2] = 0,win_Height[2] = 0;
-		crop_startX[2] = 0, crop_startY[2] = 0;
-		//OSD
-		win_startX[3] = 0, win_startY[3] = 0,win_Width[3] = 0,win_Height[3] = 0;
-		crop_startX[3] = 0, crop_startY[3] = 0;
-	}
-	else if(curLayoutId == MSG_RIGHT_FULLVIEW) {
-//右视全屏
-		//synthesis image
-		win_startX[0] = 0,win_startY[0] = 0,win_Width[0] = 0,win_Height[0] = 0;
-		crop_startX[0] = 0, crop_startY[0] = 0;
-		//single camera view
-		win_startX[1] = 0, win_startY[1] = 0,win_Width[1] = 736,win_Height[1] = 480;
-		crop_startX[1] = 0, crop_startY[1] = 0;
-		//car box
-		win_startX[2] = 0, win_startY[2] = 0,win_Width[2] = 0,win_Height[2] = 0;
-		crop_startX[2] = 0, crop_startY[2] = 0;
-		//OSD
-		win_startX[3] = 0, win_startY[3] = 0,win_Width[3] = 0,win_Height[3] = 0;
-		crop_startX[3] = 0, crop_startY[3] = 0;
-	}
-	else if(curLayoutId == MSG_ALLVIEW) {
-///四路摄像头同时显示
-		//synthesis image
-		win_startX[0] = 0,win_startY[0] = 0,win_Width[0] = 320,win_Height[0] = 480;
-		crop_startX[0] = 0, crop_startY[0] = 0;
-		//single camera view
-		win_startX[1] = 320, win_startY[1] = 0,win_Width[1] = 736 - 320,win_Height[1] = 400;
-		crop_startX[1] = 90, crop_startY[1] = 60;
-		//car box
-		win_startX[2] = 120 + win_startX[0], win_startY[2] = 120,win_Width[2] = 80,win_Height[2] = 240;
-		crop_startX[2] = 0, crop_startY[2] = 0;
-		//OSD
-		win_startX[3] = 320, win_startY[3] = 400,win_Width[3] = 400,win_Height[3] = 80;
-		crop_startX[3] = 40, crop_startY[3] = 0;
-	}
-	else {
-		System_printf("error! unknown cmd %d", curLayoutId);
-	}
 
+    
+#ifndef DIRECT_SHOW
+    rot_x += 0.01;
+    rot_y += 0.01;
+#endif
+
+}
+#else
+
+/*画立方体*/
+void drawCube(int bufferindex)
+{
+    static GLfloat m_fAngleX = 0.0f;
+    static GLfloat m_fAngleY = 0.0f;
+
+    glClear(GL_COLOR_BUFFER_BIT);
+    glEnable(GL_TEXTURE_STREAM_IMG);
+
+    glPushMatrix();
+
+    // Rotate the cube model
+    glRotatef(m_fAngleX, 1.0f, 0.0f, 0.0f);
+    glRotatef(m_fAngleY, 0.0f, 1.0f, 0.0f);
+
+    glTexBindStreamIMG(bcdev_id, bufferindex);
+/*    glBindTexture(GL_TEXTURE_STREAM_IMG, bufferindex);*/
+
+    // Enable 3 types of data
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_NORMAL_ARRAY);
+    glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+
+    // Set pointers to the arrays
+    glVertexPointer(3, GL_FLOAT, 0, cube_vertices);
+    glNormalPointer(GL_FLOAT, 0, cube_normals);
+    glTexCoordPointer(2, GL_FLOAT, 0, cube_tex_coords);
+
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 8);
+    glDrawArrays(GL_TRIANGLE_STRIP, 8, 8);
+
+    glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    glDisableClientState(GL_NORMAL_ARRAY);
+
+    glPopMatrix();
+
+    glDisable(GL_TEXTURE_STREAM_IMG);
+    eglSwapBuffers(dpy, surface);
+
+    m_fAngleX += 0.25f;
+    m_fAngleY += 0.25f;
 }
 #endif
 
-
-/*************************************************************************
- *  @func       GenColorBarToMemory
- *
- *  @brief      Generate Color bar in memory,
- *  			call this function for test
- *
- *  @returns    none
- ************************************************************************/
-//#define GEN_COLOR_BAR_PATTERN
-static void GenColorBarToMemory(int width, int height)//liuxuliuxu, 6/29/2013, YUV422, the width should be multiple of 16 for color bar.
+void usage(char *arg)
 {
-    int i=0,j=0;
-
-    for(i=0; i<height; i++)
-    {
-        for(j=0; j<(width/16); j++)        {
-            *(int *)(0x91000000+i*width*2+j*4) = 0x80B480B4;//HDTV, white.
-            *(int *)(0x91000000+i*width*2+width/4+j*4) = 0x88A82CA8;//HDTV, yellow.
-            *(int *)(0x91000000+i*width*2+2*width/4+j*4) = 0x2C919391;//HDTV, cyan.
-            *(int *)(0x91000000+i*width*2+3*width/4+j*4) = 0x34853F85;//HDTV, green.
-            *(int *)(0x91000000+i*width*2+4*width/4+j*4) = 0xCC3FC13F;//HDTV, magenta.
-            *(int *)(0x91000000+i*width*2+5*width/4+j*4) = 0xD4336D33;//HDTV, red.
-            *(int *)(0x91000000+i*width*2+6*width/4+j*4) = 0x781CD41C;//HDTV, blue.
-            *(int *)(0x91000000+i*width*2+7*width/4+j*4) = 0x80108010;//HDTV, black.
-        }
-    }
+    printf("Usage:\n"
+           "    %s [-b <id> | -p | -w <width> | -t <height> | -h]\n"
+           "\t-b - bc device id [default: 0]\n"
+           "\t-p - enable profiling\n"
+           "\t-w - width of texture buffer in pixel, multiple of 8 (for ES3.x)\n"
+           "\t     or 32 (for ES2.x)\n"
+           "\t-t - height of texture buffer in pixel\n"
+           "\t-h - print this message\n\n", arg);
 }
 
-
-/*************************************************************************
- *  @func       edmaInit
- *
- *  @param[in]   pBopTaskCtxt:structure included handle of edma channel requested
- *  @brief      initialize edma handle
- *  			requestion edma channel for use, call this function before
- *  			edma copy.
- *
- *  @returns    none
- ************************************************************************/
-static void edmaInit(bopCtxt_t *pBopTaskCtxt)
-{
-    EDMA3_DRV_Result edmaResult = EDMA3_DRV_SOK;
-    do {
-        memset(pBopTaskCtxt->hEdma,0,sizeof(pBopTaskCtxt->hEdma));
-        pBopTaskCtxt->hEdma = (EDMA3_DRV_Handle) edma3init(0, &edmaResult);
-        if (!pBopTaskCtxt->hEdma)
-        {
-            System_printf("edma3init() Failed, error code: %d\n", edmaResult);
-            break;
-        }
-
-        gTcc = EDMA3_DRV_TCC_ANY;
-        gEdma_ChId = EDMA3_DRV_DMA_CHANNEL_ANY;
-        edmaResult = EDMA3_DRV_requestChannel (pBopTaskCtxt->hEdma, &gEdma_ChId, &gTcc,
-            (EDMA3_RM_EventQueue)0,
-            &edmaDoneCb, NULL);
-        if (edmaResult != EDMA3_DRV_SOK)
-        {
-            System_printf("EDMA3_DRV_requestChannel() Failed, error code: %d\n", edmaResult);
-            break;
-        }
-    } while(0);
-
-    if (edmaResult != EDMA3_DRV_SOK)    {
-        edmaResult = edma3deinit(0,pBopTaskCtxt->hEdma);
-        if (edmaResult != EDMA3_DRV_SOK)
-        {
-            System_printf("edma3deinit() Failed, error code: %d\n", edmaResult);
-        }
-    }
-
-    return;
-}
-
-
-#ifdef A8_CommInTask
-/*************************************************************************
- *  @func       A8CommTask
- *
- *  @param[in]   arg0: task argument0
- *  @param[in]   arg1: task argument1
- *  @brief
- *               task which talk to A8, pass image pointer of four camera to A8
- *
- *  @returns    none
- ************************************************************************/
-void A8CommTask(UArg arg0, UArg arg1)
-{
-    cmdQParams_t* pA8TaskCmdQ = NULL_VALUE;
-
-    cfg8Pointers_t *pDSP_To_A8_TempCmdMsg_intask = NULL_VALUE; 
-    int nStatus;
-    ERRORTYPE nRetVal = ecNone;
-    MessageQ_Msg pTempCmdMsg_intask = NULL_VALUE;
-    uint16_t nSRId_intask = 0u;
-    SharedRegion_SRPtr srPtr_intask = {0u};
-    cfg4Pointers_t *pFrom_A8_TempCmdMsg_intask = NULL_VALUE;
-
-    RemoteDebug_init();//liuxu, 04/22/2014, add remote debug support to A8 console.
-
-#ifdef TWO_TASKS_SLEEP
-    Task_sleep(1000u*10000);//liuxu, 12/1/2013, don't drain the CPU here.
-#endif    
-
-    MEM_ALLOC(pA8TaskCmdQ, cmdQParams_t);//liuxu, 11/20/2013, let it comes from heap for IPC.
-    System_printf("[C674x]: liuxu, pA8TaskCmdQ from system heap is 0x%x\n", pA8TaskCmdQ);
-
-    /*
-     * 这个消息队列由DSP创建，拥有者是DSP
-     */
-    pA8TaskCmdQ->hCmdQ = commandQCreate("DSP_CMD_Q_TO_A8", NULL_VALUE);
-    if (NULL == pA8TaskCmdQ->hCmdQ)    {
-        System_printf("\n%s: %d: A8CommTask command Q creation failed for Q %s. \n", __FUNCTION__, __LINE__, "DSP_CMD_Q_TO_A8");
-        while(1);
-    }
-
-    pDSP_To_A8_TempCmdMsg_intask = (cfg8Pointers_t *)commandQAlloc(MSGQ_HEAPID1, sizeof(cfg8Pointers_t));//liuxuliuxu, don't forget to free at last.//liuxu, 10/5/2013.
-    System_printf("[C674x]: liuxu, pDSP_To_A8_TempCmdMsg_intask from commandQAlloc should be in sr0 is 0x%x\n", pDSP_To_A8_TempCmdMsg_intask);//liuxu, 11/20/2013.
-
-    if (NULL == pDSP_To_A8_TempCmdMsg_intask)    {
-        while(1){;}
-    }
-    /* Send the ACK command to the remote task. */
-    memset(pDSP_To_A8_TempCmdMsg_intask, 0, sizeof(cfg8Pointers_t));
-
-    // writeback dirty lines globally for A8 Syslink IPC issue.
-    INVALIDATE_DSP_CACHE();
-
-    System_printf("[C674x]: A8CommTask, before DSP and A8 attach...\n");
-
-    do    {
-        Task_sleep(1000u);//liuxu, 12/1/2013, don't drain the CPU here. 
-        nStatus = Ipc_attach(HOST_CORE_ID);//liuxuliuxu, 8/19/2013, communicate with A8 for encoding.
-    } while (nStatus < 0);
-
-    System_printf("[C674x]: A8CommTask, DSP and A8 attach is done!\n");
-
-    do    {
-        nRetVal = commandQOpen("A8_CMD_Q_TO_DSP_LITE", &(pA8TaskCmdQ->nCmdQId));
-    }while(nRetVal != ecNone);
-
-    while(1)
-    {
-        if((mutualTaskCmdMsg.cmdType == 0x777) && (mutualTaskCmdMsg.pY_Pointer0 != NULL))
-        {
-
-#ifdef TI_DSP_ALG//liuxu, 02/11/2014, ti dsp processing...
-
-#ifndef YUV422i
-??
-            #if 1//liuxu, 02/19/2014, twist for test. 	
-            tpHandle.frmBuffer[0] = (void *)(mutualTaskCmdMsg.pY_Pointer0);//liuxu, 05/27/2014, front view.
-			tpHandle.frmBuffer[1] = (void *)(mutualTaskCmdMsg.pY_Pointer1);//liuxu, 05/27/2014, right view.  
-			tpHandle.frmBuffer[2] = (void *)(mutualTaskCmdMsg.pY_Pointer3);//liuxu, 05/27/2014, back view.  
-			tpHandle.frmBuffer[3] = (void *)(mutualTaskCmdMsg.pY_Pointer2);//liuxu, 05/27/2014, left view.  
-
-
-			//tpHandle.frmBuffer[0] = (void *)(mutualTaskCmdMsg.pY_Pointer2);//liuxu, 02/11/2014, left view.
-			//tpHandle.frmBuffer[1] = (void *)(mutualTaskCmdMsg.pY_Pointer0);//liuxu, 02/11/2014, front view.  
-			//tpHandle.frmBuffer[2] = (void *)(mutualTaskCmdMsg.pY_Pointer1);//liuxu, 02/11/2014, right view.  
-			//tpHandle.frmBuffer[3] = (void *)(mutualTaskCmdMsg.pY_Pointer3);//liuxu, 02/11/2014, back view.  
-            #else
-            tpHandle.frmBuffer[0] = (void *)(mutualTaskCmdMsg.pY_Pointer1);//liuxu, 02/11/2014, left view.
-			tpHandle.frmBuffer[1] = (void *)(mutualTaskCmdMsg.pY_Pointer3);//liuxu, 02/11/2014, front view.  
-			tpHandle.frmBuffer[2] = (void *)(mutualTaskCmdMsg.pY_Pointer2);//liuxu, 02/11/2014, right view.  
-			tpHandle.frmBuffer[3] = (void *)(mutualTaskCmdMsg.pY_Pointer0);//liuxu, 02/11/2014, back view. 
-            #endif
-			//System_printf("\n\n\n\n[C674x]: liuxu, 02/12/2014, pY_Pointer0=0x%x\n", mutualTaskCmdMsg.pY_Pointer0);
-			//System_printf("[C674x]: liuxu, 02/12/2014, pY_Pointer1=0x%x\n", mutualTaskCmdMsg.pY_Pointer1);
-			//System_printf("[C674x]: liuxu, 02/12/2014, pY_Pointer2=0x%x\n", mutualTaskCmdMsg.pY_Pointer2);
-			//System_printf("[C674x]: liuxu, 02/12/2014, pY_Pointer3=0x%x\n\n\n\n", mutualTaskCmdMsg.pY_Pointer3);
-
-
-
-            firstSetOfFramesReady = 1;
-            ToProcessOneSet = 1;
-            while(DoneProcessedOneSet!=1)
-            {
-                Task_sleep(1);//liuxu, 02/11/2014, 1ms. 
-            }
-            DoneProcessedOneSet = 0;
-            //edma
-            //liuxu, 02/12/2014, disable EDMA, and use hard pointer of "outputBuffer" at A8 side directly. 
-            //edmaWarpImgCpy3(myBopTaskCtxt.hEdma, (void *)outputBuffer, (mutualTaskCmdMsg.pY_Pointer0), 720, 480);
-            //edmaWarpImgCpy3(myBopTaskCtxt.hEdma, (void *)(outputBuffer+736*480), (mutualTaskCmdMsg.pUV_Pointer0), 720, 240);  
-#endif
 
 #endif 
-            /*
-             * DSP将四路视频帧数据指针填充在消息里，发送给A8
-             */
-            pDSP_To_A8_TempCmdMsg_intask->cmdType = 0x777;
-            
-            pDSP_To_A8_TempCmdMsg_intask->pY_Pointer0 = (void *)(mutualTaskCmdMsg.pY_Pointer0);
-            pDSP_To_A8_TempCmdMsg_intask->pUV_Pointer0 = (void *)(mutualTaskCmdMsg.pUV_Pointer0);
 
-            pDSP_To_A8_TempCmdMsg_intask->pY_Pointer1 = (void *)(mutualTaskCmdMsg.pY_Pointer1);
-            pDSP_To_A8_TempCmdMsg_intask->pUV_Pointer1 = (void *)(mutualTaskCmdMsg.pUV_Pointer1);
+/* private functions */
+static Int Main_main(Void);
+static Int Main_parseArgs(Int argc, Char *argv[]);
 
-            pDSP_To_A8_TempCmdMsg_intask->pY_Pointer2 = (void *)(mutualTaskCmdMsg.pY_Pointer2);
-            pDSP_To_A8_TempCmdMsg_intask->pUV_Pointer2 = (void *)(mutualTaskCmdMsg.pUV_Pointer2);
 
-            pDSP_To_A8_TempCmdMsg_intask->pY_Pointer3 = (void *)(mutualTaskCmdMsg.pY_Pointer3);
-            pDSP_To_A8_TempCmdMsg_intask->pUV_Pointer3 = (void *)(mutualTaskCmdMsg.pUV_Pointer3);
+#define Main_USAGE "\
+Usage:\n\
+    app_host [options] proc\n\
+\n\
+Arguments:\n\
+    proc      : the name of the remote processor\n\
+\n\
+Options:\n\
+    h   : print this help message\n\
+    l   : list the available remote names\n\
+\n\
+Examples:\n\
+    app_host DSP\n\
+    app_host -l\n\
+    app_host -h\n\
+\n"
 
-            nStatus = commandQPut(pA8TaskCmdQ->nCmdQId, (MessageQ_Msg )pDSP_To_A8_TempCmdMsg_intask);
+/* private data */
+static String   Main_remoteProcName = NULL;
 
-            mySentToA8Counter++;//liuxu, 05/08/2014, debug for ipc to A8 issue.
-            
-            if (nStatus < 0) {
-                System_printf("\n%s: %d: CommandQ put failed\n", __FUNCTION__, __LINE__);
-                while(1){;}
-            }
+extern Int curTrace;//liuxu, 8/9/2013.
 
-            /*
-             * DSP循环检查从A8消息队列里传来的消息，提取用户界面切换控制命令ChInfoFromA8值
-             */
-            nStatus = commandQGet(pA8TaskCmdQ->hCmdQ, &(pTempCmdMsg_intask), (uint32_t)MessageQ_FOREVER);
-            if (nStatus < 0) {
-                System_printf("\n%s: %d: CommandQ get failed\n", __FUNCTION__, __LINE__);
-                while(1){;}
-            }
+extern int test111();
 
-            /* Get the id of the address if id is not already known. */
-            nSRId_intask = SharedRegion_getId(pTempCmdMsg_intask);
-            /* Get the shared region pointer for the address */
-            srPtr_intask = SharedRegion_getSRPtr(pTempCmdMsg_intask, nSRId_intask);
-            /* Get the address back from the shared region pointer */
-            pFrom_A8_TempCmdMsg_intask = SharedRegion_getPtr(srPtr_intask); 
 
-            if( (pFrom_A8_TempCmdMsg_intask->cmdType >> 16) != 0x666)//liuxu, 06/19/2014, RISK...Be careful for rev mapping.
-            {
-                System_printf("\nliuxu,  pFrom_A8_TempCmdMsg_intask->cmdType != 0x666, is 0x%x\n", pFrom_A8_TempCmdMsg_intask->cmdType);
-                while(1){;}
-            }
+/*
+ *  ======== main ========
+ */
+Int main(Int argc, Char* argv[])
+{
+    Int status;
+    
+    printf("--> liuxu, main:, curTrace=0x%x\n", curTrace);
+    
+    //test111();
 
-            mutualTaskCmdMsg.cmdType = 0;
-            mutualTaskCmdMsg.pY_Pointer0 = NULL;
+#if 0//liuxu, 8/19/2013.    
+    /* parse command line */
+    status = Main_parseArgs(argc, argv);
 
-            ChInfoFromA8 = (pFrom_A8_TempCmdMsg_intask->cmdType & 0xFFFF);//liuxu, 06/19/2014, add info channel among of A8 to DSP/M3.
-            tUIFsm.u8PendingCommand = ChInfoFromA8;
-        } else  {
-            Task_sleep(1u);
-        }
+    if (status < 0) {
+        goto leave;
     }
+#endif
+
+    GT_setTrace ((GT_TraceState_Enable | GT_TraceSetFailure_Enable | (4 << (32 - GT_TRACECLASS_SHIFT))), GT_TraceType_User);//liuxu, 8/19/2013, enable trace.
+
+
+    /* SysLink initialization */
+    SysLink_setup();
+
+    /* application create, exec, delete */
+    status = Main_main();
+
+    /* SysLink finalization */
+    SysLink_destroy();
+
+leave:
+    printf("<-- main:\n");
+    status = (status >= 0 ? 0 : status);
+    
+    return (status);
 }
 
-/*************************************************************************
- *  @func       A8CommCreate
- *
- *  @param[in]   arg0: task argument0
- *  @param[in]   arg1: task argument1
- *  @brief
- *               API to create A8 communication task
- *
- *  @returns    none
- ************************************************************************/
-ERRORTYPE A8CommCreate(Void)
+
+/*
+ *  ======== Main_main ========
+ */
+typedef struct cfg4Pointers_t
 {
-    ERRORTYPE               nRetVal = ecNone;
-    Task_Params             taskParams = {0};
+    MessageQ_MsgHeader msgHdr;
+    UInt32 cmdType;
+    UInt8 cmdParam[4];	///+ gzd, 增加命令参数
+    void *pPointer0;
+    void *pPointer1;
+    void *pPointer2;
+    void *pPointer3;
+} cfg4Pointers_t;
 
-    do   {
-        Task_Params_init(&taskParams);
-        taskParams.arg0 = 1u;
-        taskParams.arg1 = 0u;
-        taskParams.stackSize = (1024u * 10u);
-        taskParams.priority = 12;//liuxu, 11/18/2013, bigger means higher priority. 12 for is dsp_app_task. 
-     
-		/*
-		 * 启动通信线程
-		 */
-        if (NULL == Task_create((Task_FuncPtr) &A8CommTask, &taskParams, NULL))  {
-            System_printf("[%s] %s: %d: A8 Comm Process Task creation failed for task\n",
-                "A8Comm",__FUNCTION__,__LINE__);
-            nRetVal = ecFail;
-            break;
-        }
-        System_printf("[%s] %s: %d: A8CommTask created well.\n", "A8CommTask", __FUNCTION__, __LINE__);
+typedef struct cfg8Pointers_t
+{
+    MessageQ_MsgHeader msgHdr;
+    UInt32 cmdType;
+    void *pY_Pointer0;
+    void *pY_Pointer1;
+    void *pY_Pointer2;
+    void *pY_Pointer3;
+    void *pUV_Pointer0;
+    void *pUV_Pointer1;
+    void *pUV_Pointer2;
+    void *pUV_Pointer3;
+} cfg8Pointers_t;//liuxu, 10/5/2013.
+ 
+#define MSGQ_HEAP_NAME      "msgQHeap"//liuxu, 8/20/2013.
+HeapBufMP_Handle hHeap = NULL;
+#define MSGQ_HEAPID         0u
 
-    } while(0);
+MessageQ_Handle hMessageQ = NULL;
+cfg4Pointers_t* cmdMsg = NULL;
+UInt32 RemoteDspQId;
+
+#define ROUNDUP_SIZE(a, b) (UInt32)((((UInt32)(a)) + (((UInt32)(b)) - 1)) & ~((UInt32)(b) - 1))
+
+/*消息如队列*/
+Int32 commandQPut(UInt32 remoteQId, void *pCmdMsg)
+{
+    Int32 nRetVal = 0;
+
+    /* Flush and invalidate  pCmdMsg except MessageQ_MsgHeader. */
+    //Cache_wbInv((Ptr) ((Int8 *) pCmdMsg), sizeof(cfg4Pointers_t), (UInt16)Cache_Type_ALL, (Bool)TRUE);
+
+    nRetVal = MessageQ_put((MessageQ_QueueId) remoteQId, pCmdMsg);
+
+    /* Flush and invalidate only MessageQ_MsgHeader in pCmdMsg. */
+    //Cache_wbInv((Ptr) pCmdMsg , sizeof(MessageQ_MsgHeader), (UInt16)Cache_Type_ALL, (Bool)TRUE);
 
     return nRetVal;
 }
-#endif //#ifdef A8_CommInTask
 
-
-/*************************************************************************
- *  @func       dspAppTask
- *
- *  @brief      Main application task. enable main IPC thread back
- *
- *  @param[in]  arg0    : Task argument 0
- *  @param[in]  arg1    : Task argument 1
- *
- *  @returns    None
- ************************************************************************/
-Void dspAppTask(UArg arg0, UArg arg1)
+/*从消息队列取消息*/
+Int32 commandQGet(void *hCmdQ, void *ppMsg, UInt32 nTimeOut)
 {
-    ERRORTYPE nRetVal = ecNone;
+    /* Invalidate cache. */
+    //Cache_inv((cfg4Pointers_t *)(*(cfg4Pointers_t **) ppMsg), sizeof(cfg4Pointers_t), (UInt16)Cache_Type_ALL, (Bool)TRUE);
 
-    Vps_rprintf("inside dspAppTask");
+    return (MessageQ_get((MessageQ_Handle) hCmdQ, (MessageQ_Msg *) ppMsg, nTimeOut));
+}
 
-#ifdef GEN_COLOR_BAR_PATTERN
-    //GenColorBarToMemory(288, 200);//liuxuliuxu, 6/29/2013, for standalone SRV demo.
+#ifdef MPEG4_ENCODER
+#include <ti/syslink/ProcMgr.h>
+void * pEncoder = NULL;
+FRAME_STRUCT InputFrame;
+
+unsigned int writeIdx = 0;
+unsigned int readIdx = 0;
+
+ivi8u* video_Y_PointerFifo[4]={NULL};
+ivi8u* video_UV_PointerFifo[4]={NULL};
+
+//#define ONE_THREAD_TEST//liuxu, 12/23/2013, just for test.
+
+void mpeg4_encoding_task(void)
+{
+
+    int k = 0;
+    int time1, time2;
+    int sum_time = 0;
+
+    printf("\n\n\n\n\n\n\n\n\n\nliuxu, mpeg4_encoding_task\n\n\n\n\n\n\n\n\n\n");
+
+    while(1)
+    {
+
+        if(writeIdx > readIdx)
+        {
+            k++;
+
+            printf("\nliuxu, readIdx = %d in mpeg4_encoding_task", readIdx);
+        
+        	InputFrame.pY = video_Y_PointerFifo[readIdx%4];//pInputYUV + alignoffset;
+        	InputFrame.pU = video_UV_PointerFifo[readIdx%4];//InputFrame.pY + lumalen;
+        	InputFrame.pV = NULL;//InputFrame.pU + chromalen;//liuxu, 8/21/2013, just two points for NV12.
+
+#ifndef ONE_THREAD_TEST//liuxu, 12/23/2013, just for test.
+        	readIdx++;
 #endif
+        	InputFrame.TimeStamp = k;		// time stamp!
+    		InputFrame.userDoNotEncode = iviFalse;		// encode this frame!
+    		
+    		//If the user decides to drop the frame, then no matter what rc has decided the frame will be dropped.
+    		if (InputFrame.userDoNotEncode)
+    			InputFrame.DoNotEncode = InputFrame.userDoNotEncode;
+    		
+    		time1 = IviGetTime();
+
+    		if ( FAILED(MP4VEncSP_EncodeFrame(pEncoder, &InputFrame)) )
+    		{
+    		    printf("\nliuxu, MP4VEncSP_EncodeFrame Failed!!\n");
+    		}
+
+    		time2 = IviGetTime() - time1;
+
+            printf("\nliuxu, k=%d, encoding per frame=%d-ms", k, time2);
+
+    		
+    		sum_time += time2;
+
+    		if(k == 1200)
+    		{
+                //printf("\nliuxu, k=%d, pointerY=0x%x, pointerUV=0x%x, pFrom_DSP_TempCmdMsg->pY_Pointer0=0x%x, pFrom_DSP_TempCmdMsg->pUV_Pointer0=0x%x\n", k, vitrualY, vitrualUV, pFrom_DSP_TempCmdMsg->pY_Pointer0, pFrom_DSP_TempCmdMsg->pUV_Pointer0);
+                printf("liuxu, timestamp=%d, Average FPS is %f!\n", time1+time2, 1200 * 1000.0 / sum_time);
+
+                while(1)
+                {
+                    sleep(5000);//liuxu, 12/24/2013, sleep 5000s. 
+                }
+
+    		}
+
+        }
+        else
+        {
+            ;//usleep(10000);//liuxu, 12/23/2013, usleep 20ms to yield to mpeg4 encoder thread. 
+        }
+	}
+}
+#endif
+
+#ifdef GFX_CUBE
+#include <ti/syslink/ProcMgr.h>
+#endif
+
+#define SAVE_PERSMAT_TO_FS//liuxu, 04/24/2014.
+
+#ifdef LEGACY_MAIN   ///原来的main
+
+#if 0
+Int Main_main(Void)
+{
+    UInt16      remoteProcId;
+    Int         status = 0;
+    Int         printremoteProcId = 0xff;
+    int ret = -1;
+
+    MessageQ_Msg pTempCmdMsg = NULL;//liuxu, 8/20/2013.
+    UInt16 nSRId = 0u;
+    SharedRegion_SRPtr srPtr = {0u};
+    cfg8Pointers_t *pFrom_DSP_TempCmdMsg = NULL;
+
+    unsigned char *vitrualY;
+    unsigned char *vitrualUV;
+
+    unsigned char *vitrualY1;//liuxu, 10/5/2013.
+    unsigned char *vitrualY2;
+    unsigned char *vitrualY3;
+
+    unsigned char *vitrualUV1;
+    unsigned char *vitrualUV2;
+    unsigned char *vitrualUV3;
+
+    int time1_profile, time2_profile, time3_profile, time4_profile, time5_profile, time6_profile, time7_profile, time8_profile, time9_profile;//liuxu, 10/12/2013.
+
+
+    printf("--> Main_main:\n");
+
+#if 0 ///- GZD
+#ifdef SAVE_PERSMAT_TO_FS
+
+        unsigned char *coreObjVirtBaseAddr2;
+
+        unsigned int memDevFd2;
+        memDevFd2 = open("/dev/mem",O_RDWR|O_SYNC);
+        if(memDevFd2 < 0)
+        {
+            printf("\nliuxu, 04/24/2014, ERROR: /dev/mem open failed for load!!!\n");
+            return -1;
+        }
+
+        coreObjVirtBaseAddr2 = mmap(
+                (void	*)0x80000000,
+                0x1000,
+				PROT_READ|PROT_WRITE|PROT_EXEC,
+				MAP_SHARED,
+				memDevFd2,
+				0x80000000
+				);
+
+		if (coreObjVirtBaseAddr2 == NULL)
+    	{
+    		printf("\nliuxu, 04/24/2014, ERROR: mmap() failed for load!!!\n");
+    		return -1;
+    	}
+
+        *((unsigned int *)coreObjVirtBaseAddr2) = 0xFFFFFFFF;//liuxu, 04/24/2014, clear to tag in case no exsiting persmat.dat, so that the DSP use the one built in code.
+
+        FILE * dumpfilePersmat_ForLoad;
+
+        dumpfilePersmat_ForLoad = fopen("/media/mmcblk0p1/DSP_Persmat.dat", "r");//liuxu, 04/24/2014, just failed if no exsiting.
+
+
+        if(dumpfilePersmat_ForLoad == NULL)
+        {
+            printf("\nliuxu, 04/24/2014, /media/mmcblk0p1/DSP_Persmat.dat doesn't exist\n");
+        }
+        else
+        {
+            int i_readPersmatcount = fread (coreObjVirtBaseAddr2, 1, 4*9*4, dumpfilePersmat_ForLoad);
+            printf("\nliuxu, 04/22/2014, i_readPersmatcount=%d bytes\n", i_readPersmatcount);
+            fclose(dumpfilePersmat_ForLoad);
+            close(memDevFd2);
+        }
+#endif
+#endif
+
+    remoteProcId = MultiProc_getId("DSP");
+
+    /* attach to the remote processor */
+    printremoteProcId = MultiProc_getId("HOST");
+
+    Osal_printf("\nliuxu, remoteProcId=%d, host-printremoteProcId=0x%x\n", remoteProcId, printremoteProcId);
+
+
+    void *ipc_vector = (0x85c00400);//liuxu, 07/01/2014, this is the address of ipc header.
+
+    #if 1
+    status = Ipc_control(remoteProcId, Ipc_CONTROLCMD_LOADCALLBACK, &ipc_vector);//liuxu, 07/01/2014, support late attach.
+    #else
+    status = Ipc_control(remoteProcId, Ipc_CONTROLCMD_LOADCALLBACK, NULL);
+    #endif
+
+    if (status < 0) {
+        printf("Main_main: load callback failed, remoteProcId=%d\n", remoteProcId);
+        goto leave;
+    }
+
+    /* invoke the SysLink start callback */
+    status = Ipc_control(remoteProcId, Ipc_CONTROLCMD_STARTCALLBACK, NULL);
+
+    if (status < 0) {
+        printf("Main_main: start callback failed\n");
+        goto leave;
+    }
+
+    /* BEGIN application phase */
+    printf("--> liuxu App_create:\n");//liuxu, 8/9/2013.
 
     do
     {
-        slaveTaskMgrCtxt_t *pSlaveTaskMgrCtxt = NULL_VALUE;
-        cmdQParams_t *pSlaveTaskMgrCmdQ = NULL_VALUE;
-        cmdQParams_t *pMasterTaskMgrCmdQ = NULL_VALUE;
-        int nStatus;
-        MessageQ_Msg pTempCmdMsg = NULL_VALUE;
-        uint16_t nSRId = 0u;
-        SharedRegion_SRPtr srPtr = {0u};
-        cfgCmds_t *p2TempCmdMsg = NULL_VALUE;
-#if 0
-//fix by gzd. 改成全局变量
-        cfg4Pointers_t *pFrom_VPSS_M3_TempCmdMsg = NULL_VALUE;
-        cfg4Pointers_t *pDSP_To_VPSS_M3_TempCmdMsg = NULL_VALUE;
-        cfg4Pointers_t *pFrom_A8_TempCmdMsg = NULL_VALUE;
-        cfg8Pointers_t *pDSP_To_A8_TempCmdMsg = NULL_VALUE;//liuxuliuxu, 8/20/2013. //liuxu, 10/5/2013. 
-        cfg8Pointers_t *pFrom_VPSS_M3_TempCmdMsg2 = NULL_VALUE;//liuxuliuxu, 8/8/2013, for DSP EDMA downscale and encoder.
-#endif
-        frame_t InFrame, OutFrame;
-        frame_t* pInFrame;
-        frame_t* pOutFrame;
-        int i = 0;
+		/* Open the heap created by the other processor. Loop until opened. */
+		do
+		{
+			status = HeapBufMP_open(MSGQ_HEAP_NAME, &hHeap);
+			/*
+			 *  Sleep for 1 clock tick to avoid inundating remote processor
+			 *  with interrupts if open failed
+			 */
+			if (status < 0)
+			{
+				sleep(1);//liuxu, 8/20/2013, sleep of linux.
+			}
+		} while (status < 0);
 
-        /* Allocate and obtain the slave task manager context. */
-        pSlaveTaskMgrCtxt = (slaveTaskMgrCtxt_t * ) allocSlaveTaskMgrCtxt_Lite();
-        System_printf("[C674x]: liuxu-11/21/2013, pSlaveTaskMgrCtxt from system heap is 0x%x\n", pSlaveTaskMgrCtxt);
-        
-        if (NULL == pSlaveTaskMgrCtxt)        {
-            System_printf("\n%s: %d: Slave Task Manager context allocation error. \n", __FUNCTION__, __LINE__);
-            nRetVal = ecOutOfMemory;
-            break;
-        }
+		/* Register this heap with MessageQ */
+		MessageQ_registerHeap((IHeap_Handle) hHeap, MSGQ_HEAPID);
 
-#ifdef A8_CommInTask
-        //Create Task which will talk to A8 in seperated task.
-//        创建通信线程
-        nRetVal = A8CommCreate();
-#ifdef TWO_TASKS_SLEEP
-        Task_sleep(1000u*10000);//liuxu, 12/1/2013, don't drain the CPU here.
+    } while(0);
+
+    hMessageQ = MessageQ_create((String) "A8_CMD_Q_TO_DSP_LITE", NULL);
+    cmdMsg = (cfg4Pointers_t *)MessageQ_alloc(MSGQ_HEAPID, ROUNDUP_SIZE(sizeof(cfg4Pointers_t), 128));//liuxuliuxu, don't forget to free at the end.
+
+    do
+    {
+        status = MessageQ_open("DSP_CMD_Q_TO_A8", &RemoteDspQId);
+    }while(status != 0);
+
+#ifdef A8_MCU_COMM_UART
+    ret = COMM_CreateTask();
+    if(ret < 0) {
+        printf("\n\n gzd, ERROR! Create UART comm task failed. \n");
+    }
+    else {
+    	printf("\n\n gzd, OK to Create UART comm task. \n");
+    }
 #endif
-        if (nRetVal != ecNone) {
+
+    int fd_gpio;
+    char ch;
+    int pressing, released;
+    int channelNo = 0;
+    int long_press_counter = 0;
+    int long_pressed_trigger = 0;
+
+    int ChInfoToDSP = 0;
+
+// + a0220402, add support carit board key
+#ifdef CONFIG_CARIT
+    fd_gpio = open("/sys/class/gpio/gpio4/value", O_RDONLY | O_NONBLOCK );
+#else
+    fd_gpio = open("/sys/class/gpio/gpio39/value", O_RDONLY | O_NONBLOCK );//liuxu, 10/18/2013, for detecting sw9 of J5eco EVM.
+#endif
+// - a0220402,
+	if (fd_gpio < 0) {
+		perror("\nliuxu, gpio/fd_open\n");
+	}
+
+	printf("\n\n\nliuxu, 10/18/2013, fd_gpio=%d\n\n\n", fd_gpio);
+
+#if 0 ///- gzd
+	//以下代码保存摄像头图片
+    //liuxu, 02/20/2014, ti photo_snapshot.
+        ProcMgr_Handle   handle = NULL;
+        unsigned char *hardFrameOutput0;
+        unsigned char *hardFrameOutput1;
+        unsigned char *hardFrameOutput2;
+        unsigned char *hardFrameOutput3;//liuxu, 02/20/2014, 0x8ff00000.
+
+        unsigned char *phyAddrToBeChecked;//liuxu, 02/20/2014, 0x8ff00000.
+
+    	status = ProcMgr_open (&handle, 0);
+    	printf("\nliuxu, ProcMgr_open successful, handle=0x%x\n", handle);
+    	if (status < 0)
+        {
+            printf("\nliuxu, ProcMgr_open error, status=0x%x\n", status);
             while(1);
         }
+
+#define NV12_FRAMESIZE 529920//(736*480*1.5)
+    	ProcMgr_translateAddr (handle,
+                       &hardFrameOutput0,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       (void *)M3_FRAMEBUFFER_PA_0,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        ProcMgr_translateAddr (handle,
+                       &hardFrameOutput1,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       (void *)(M3_FRAMEBUFFER_PA_0 + NV12_FRAMESIZE),
+                       ProcMgr_AddrType_SlaveVirt);
+
+        ProcMgr_translateAddr (handle,
+                       &hardFrameOutput2,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       (void *)(M3_FRAMEBUFFER_PA_0 + NV12_FRAMESIZE*2),
+                       ProcMgr_AddrType_SlaveVirt);
+
+        ProcMgr_translateAddr (handle,
+                       &hardFrameOutput3,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       (void *)(M3_FRAMEBUFFER_PA_0 + NV12_FRAMESIZE*3),
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	printf("\nliuxu, 02/20/2014, virtual addr of hardFrameOutput0 = 0x%x\n", hardFrameOutput0);
+    	printf("\nliuxu, 02/20/2014, virtual addr of hardFrameOutput1 = 0x%x\n", hardFrameOutput1);
+    	printf("\nliuxu, 02/20/2014, virtual addr of hardFrameOutput2 = 0x%x\n", hardFrameOutput2);
+    	printf("\nliuxu, 02/20/2014, virtual addr of hardFrameOutput3 = 0x%x\n", hardFrameOutput3);
+
+
+    	ProcMgr_translateAddr (handle,
+                       &phyAddrToBeChecked,
+                       ProcMgr_AddrType_MasterPhys,
+                       (void *)(0xd5604800),
+                       ProcMgr_AddrType_MasterKnlVirt);
+
+        printf("\nliuxu, 05/08/2014, 2, phy addr of phyAddrToBeChecked = 0x%x\n", phyAddrToBeChecked);//liuxu, 05/08/2014, leverage procMgr to sniff phy addr of entry->flag, which in SR0.
+
+        FILE * dumpfile0;
+        FILE * dumpfile1;
+        FILE * dumpfile2;
+        FILE * dumpfile3;
+
+        dumpfile0 = fopen("/media/mmcblk0p1/TI_top.yuv", "w");
+//+ a0220402, R1.1 add protection for the case of the absence of SD card
+	if( dumpfile0 == NULL ) {
+		printf ("SD card is needed for snopshot for developing!\n");
+	}else{
+
+		dumpfile1 = fopen("/media/mmcblk0p1/TI_right.yuv", "w");
+		dumpfile2 = fopen("/media/mmcblk0p1/TI_left.yuv", "w");
+		dumpfile3 = fopen("/media/mmcblk0p1/TI_back.yuv", "w");
+
+        time1_profile = IviGetTime();
+
+        fwrite(hardFrameOutput0, 1, 736*480*1.5, dumpfile0);
+        fwrite(hardFrameOutput1, 1, 736*480*1.5, dumpfile1);
+        fwrite(hardFrameOutput2, 1, 736*480*1.5, dumpfile2);
+        fwrite(hardFrameOutput3, 1, 736*480*1.5, dumpfile3);
+
+        time2_profile = IviGetTime() - time1_profile;
+        printf("\nliuxu, time per dump 4 files = %d ms!!\n\n\n", time2_profile);
+        printf("\n\nliuxu, 222,02/20/2014, dump 4 files well.\n\n");
+
+        fclose(dumpfile0);
+        fclose(dumpfile1);
+        fclose(dumpfile2);
+        fclose(dumpfile3);
+
+	system("sync"); ///刷新存储区迫使缓冲块数据立即写盘并更新超级块，其中包含已修改的 i-node、已延迟的块 I/O 和读写映射文件
+}
 #endif
 
-        pInFrame = &InFrame;
-        pOutFrame = &OutFrame;
-        pInFrame->nBufIdx = pOutFrame->nBufIdx = 0;//liuxuliuxu, don't reply on default memory data. 
+//- a0220402
 
-#ifdef TALK_TO_SELF
-        uint32_t framesizebytes = 518400;//720*480*1.5;
+        //fileSize += fread (buffer_addr, 1, 57600, yuvfp) ;//liuxu, 11/30/2013, rgb888.
 
-        pInFrame->colorFmtType = pOutFrame->colorFmtType = colorFormatYUV420Planar;//liuxu, 11/18/2013, moving inside of task_to_self.
-        pInFrame->nWidth = pOutFrame->nWidth = 720;
-        pInFrame->nHeight = pOutFrame->nHeight = 480;
-        pInFrame->nPitch = pOutFrame->nPitch = 720;
-        pInFrame->nChanNum = pOutFrame->nChanNum = 0;
-
-        System_printf( "Loading %d %s graphics frames of size %dx%d to location: 0x%x\n",
-        			182, "NV12", 720, 480, 0x91000000);
-#else
-        pInFrame->nChanNum = pOutFrame->nChanNum = 1;//liuxuliuxu, i'm leveraging it to do some swOSD on DSP.
-#endif
-        
-        /* Setup the shared regions on Master. */
-//        创建共享存储区
-        nRetVal = initSharedRegion(); //liuxu, DSP is the owner of share region.
-        if (nRetVal != ecNone)  {
-            System_printf("\n%s: %d: DSP LITE as HOST initSharedRegion failed. \n", __FUNCTION__, __LINE__);
-            System_abort("\n DSP LITE as HOST initSharedRegion failed.\n");
-        }
-        System_printf("[C674x]: DSP and Video-M3 attach is done\n");
-
-//        先创建堆，在附着到slaves
-//liuxuliuxu, 8/21/2013, creat heap first, then attach to slavers!!
-#ifdef TALK_TO_SELF       
-        nRetVal = commandQInit(MASTER, &(pSlaveTaskMgrCtxt->hMsgQHeap));
-#else
-        nRetVal = commandQInitJ5ecoProject(MASTER, &(pSlaveTaskMgrCtxt->hMsgQHeap));
-#endif
-
-        if (nRetVal != ecNone) {
-            break;
-        }
-        
-        /* Create the slave task manager command queue */
-        pSlaveTaskMgrCmdQ = &(pSlaveTaskMgrCtxt->slaveTaskMgrCmdQ);
-
-        System_sprintf((xdc_Char *)pSlaveTaskMgrCmdQ->cQName, "%s", MultiProc_getName(MultiProc_self()));
-        strcat((char *) pSlaveTaskMgrCmdQ->cQName, "_CMD_Q_TO_VPSS-M3");
-        pSlaveTaskMgrCmdQ->hCmdQ = commandQCreate(pSlaveTaskMgrCmdQ->cQName, NULL_VALUE);
-        System_printf("[C674x]: liuxu, pSlaveTaskMgrCmdQ->hCmdQ from commandQCreate/sr0 is 0x%x\n", pSlaveTaskMgrCmdQ->hCmdQ);
-        
-        if (NULL == pSlaveTaskMgrCmdQ->hCmdQ)  {
-            System_printf("\n%s: %d: Slave Task Mgr command Q creation failed for Q %s. \n", __FUNCTION__, __LINE__, pSlaveTaskMgrCmdQ->cQName);
-            nRetVal = ecFail;
-            break;
-        }
-
-#ifndef TALK_TO_SELF
-        /* Allocate the command msg. */
-        pDSP_To_VPSS_M3_TempCmdMsg = (cfg4Pointers_t *)commandQAlloc(MSGQ_HEAPID, sizeof(cfg4Pointers_t));//liuxuliuxu, don't forget to free at last.
-        if (NULL == pDSP_To_VPSS_M3_TempCmdMsg)
-        {
-            while(1){;}
-        }
-        System_printf("[C674x]: liuxu, pDSP_To_VPSS_M3_TempCmdMsg from commandQAlloc should be in sr0 is 0x%x\n", pDSP_To_VPSS_M3_TempCmdMsg);//liuxu, 11/20/2013.
-
-        /* Send the ACK command to the remote task. */
-        memset(pDSP_To_VPSS_M3_TempCmdMsg, 0, sizeof(cfg4Pointers_t));
-
-        do {
-            nStatus = Ipc_attach(VPSS_M3_CORE_ID);//liuxuliuxu, j5eco hdvpss example is runing on core 2.
-            Task_sleep(1u);
-        } while (nStatus < 0);
-
-#endif//#ifndef TALK_TO_SELF
-
-       System_printf("[C674x]: LIUXULIUXU1_after, DSP and Video-M3 attach is done, sizeof(cfg4Pointers_t)=%d\n", sizeof(cfg4Pointers_t));
-        
-#ifdef TALK_TO_SELF
-        nRetVal = commandQOpen(pSlaveTaskMgrCmdQ->cQName, &(pSlaveTaskMgrCmdQ->nCmdQId));
-        if (nRetVal != ecNone)
-        {
-            break;
-        }
-#else//liuxuliuxu, ipc b/w M3 and DSP.
-        do {
-            nRetVal = commandQOpen("VPSS-M3_CMD_Q_TO_DSP_LITE", &(pSlaveTaskMgrCmdQ->nCmdQId));
-        }while(nRetVal != ecNone);
-
-#endif//#ifdef TALK_TO_SELF
-
-
-#ifdef TALK_TO_SELF
-        if (nRetVal == ecNone)
-        {
-            /* Allocate the command msg. */
-            pSlaveTaskMgrCtxt->pCmdMsg = (cfgCmds_t *) commandQAlloc(MSGQ_HEAPID, sizeof(cfgCmds_t));
-            if (NULL == pSlaveTaskMgrCtxt->pCmdMsg)
+/*
+        //Y of YUV420sp.
+        for(ii2=0; ii2<160; ii2++)
+            for(jj2=0; jj2<240; jj2++)
             {
-                System_printf("\n%s: %d: CommandQ Message Allocation failed. \n", __FUNCTION__, __LINE__);
-                nRetVal = ecOutOfMemory;
-                break;
+                *(hardFrameOutput+736*160+ii2*736+240+jj2) = buffer_addr[ii2*240+jj2];
             }
 
-            cfgCmds_t * pCmdMsg;
-            pCmdMsg = pSlaveTaskMgrCtxt->pCmdMsg;
-            
-            /* Send the ACK command to the remote task. */
-            memset(pCmdMsg, 0, sizeof(cfgCmds_t));
-            pCmdMsg->cmdType = 0x88888888;
-            pCmdMsg->pCmdData = NULL_VALUE;
-
-            pSlaveTaskMgrCtxt->msgQMsg = (MessageQ_Msg ) pCmdMsg;
-
-            nStatus = commandQPut(pSlaveTaskMgrCmdQ->nCmdQId, pSlaveTaskMgrCtxt->msgQMsg);
-            if (nStatus < 0)
+        //UV of YUV420sp.
+        for(ii2=0; ii2<80; ii2++)
+            for(jj2=0; jj2<240; jj2++)
             {
-                System_printf("\n%s: %d: CommandQ put failed\n", __FUNCTION__, __LINE__);
-                nRetVal = ecFail;
-                break;
+                *(hardFrameOutput+736*480+736*80+ii2*736+240+jj2) = buffer_addr[240*160+ii2*240+jj2];
+            }
+*/
+
+#ifdef MPEG4_ENCODER
+
+    static const int alignment = 32;		// cache line alignment!
+	unsigned int alignoffset, lumalen, chromalen;
+	unsigned char *pInputYUV;
+
+	MP4VEncSP_OpenOptions OpenOptions;
+	ENC_STATUS EncStatus;
+	FILE *parfile, *rawfile;
+	FILE *resultFile;
+
+	parfile = fopen("./mp4enc.cfg", "r");
+
+	if ( !parfile ) {
+		printf ("Can't open input Par file!\n");
+		return -1;
+	}
+
+	resultFile = fopen("MP4EncPerf.txt", "wt");
+
+	if ( !resultFile ) {
+		printf ("Can't open performance result file!\n");
+		return -1;
+	}
+
+	memset(&OpenOptions, sizeof(MP4VEncSP_OpenOptions),0);
+
+	Get_MPEG4Par_File (&OpenOptions, parfile);
+
+	ConfigureStandardPar_MPEG4(&OpenOptions);
+
+
+    if ( FAILED(MP4VEncSP_Create(&pEncoder)) )
+	    return -1;
+
+
+    if( FAILED(MP4VEncSP_Open(pEncoder, &OpenOptions)) )
+	    return -1;
+
+     //The first frame will always be encoded.
+	InputFrame.DoNotEncode = iviFalse;		// encode this frame!
+
+	InputFrame.SrcEncodeRate = OpenOptions.iSrcEncodeRate;
+	InputFrame.FrameType = OpenOptions.iColorFormat;			// input frame type, not support RGB565 yet
+
+    InputFrame.YStride = OpenOptions.iFrameWidth + 16;//liuxu, 10/17/2013, support for stride.
+	InputFrame.UVStride = (InputFrame.FrameType==NV12) ? (InputFrame.YStride):(InputFrame.YStride>>1);
+    lumalen = (OpenOptions.iFrameWidth + 16) * OpenOptions.iFrameHeight;
+
+	chromalen = (InputFrame.FrameType == YUV422) ? (lumalen>>1) : (lumalen>>2);
+
+///-gzd,redefinition	ProcMgr_Handle handle = NULL;//liuxu, 10/17/2013, moved from do-while, otherwise the first frame would be slow and pipeline was breaked.
+
+	status = ProcMgr_open (&handle, 0);
+
+	//printf("\nliuxu, ProcMgr_open successful, handle=0x%x\n", handle);//liuxuliuxu.
+
+
+	if (status < 0)
+    {
+        printf("\nliuxu, ProcMgr_open error, status=0x%x\n", status);//liuxuliuxu.
+        while(1);
+    }
+
+    pthread_t thread_id;
+    int err;
+
+#if 1//liuxu, 12/24/2013
+    err = pthread_create (&thread_id, NULL, mpeg4_encoding_task, NULL);
+
+    if (err != 0)
+    {
+        printf("\n\n\nliuxu, can't create thread: %s\n", strerror(err));
+
+        while(1);
+    }
+
+    printf("\n\n\nliuxu, thread_id = %d\n", thread_id);
+#endif
+
+
+#endif
+
+    //printf("\nliuxu, start, timestamp=%d!!!!\n", IviGetTime());//liuxuliuxu.
+#ifdef GFX_CUBE
+        int bcfd = -1;
+        char bcdev_name[] = "/dev/bccatX";
+        BCIO_package ioctl_var;
+        bc_buf_params_t buf_param;
+        bc_buf_ptr_t buf_pa;
+
+        unsigned long buf_paddr[MAX_BUFFERS];
+        char *buf_vaddr[MAX_BUFFERS] = { MAP_FAILED };
+        char *frame = NULL;
+
+        char *frameUV = NULL;
+
+        int buf_size = 0;
+        int c, idx/*, ret = -1*/;
+        char opts[] = "pw:t:b:h";
+
+        int   ii;
+        int   frame_w, frame_h;
+        int   min_w = 0, min_h = 0;;
+        int   cp_offset = 0;
+
+        struct timeval tvp, tv, tv0 = {0,0};
+        unsigned long tdiff = 0;
+        unsigned long fcount = 0;
+
+        if (frame_init(&buf_param))
+            return -1;
+
+        bcdev_name[strlen(bcdev_name)-1] = '0' + bcdev_id;
+
+        if ((bcfd = open(bcdev_name, O_RDWR|O_NDELAY)) == -1) {
+            printf("ERROR: open %s failed\n", bcdev_name);
+            goto err_ret;
+        }
+
+        frame_w = buf_param.width;
+        frame_h = buf_param.height;
+
+        if (min_w > 0 && !(min_w % 8))
+            buf_param.width = min_w;
+
+        if (min_h > 0)
+            buf_param.height = min_h;
+
+printf("\n-->liuxu, 06/19/2014, frame_w=%d, frame_h=%d, min_w=%d, min_h=%d", frame_w, frame_h, min_w, min_h);
+
+        int check = 0;
+
+#ifndef NO_MEMCPY
+        if ((check = ioctl(bcfd, BCIOREQ_BUFFERS, &buf_param)) != 0) {
+            printf("ERROR: BCIOREQ_BUFFERS failed, check=%d\n", check);
+            goto err_ret;
+        }
+
+        if (ioctl(bcfd, BCIOGET_BUFFERCOUNT, &ioctl_var) != 0) {
+            goto err_ret;
+        }
+
+
+        if (ioctl_var.output == 0) {
+            printf("ERROR: no texture buffer available\n");
+            goto err_ret;
+        }
+#else
+        if ((check = ioctl(bcfd, BCIOREQ_BUFFERS, &buf_param)) != 0) {
+            printf("ERROR: BCIOREQ_BUFFERS failed, check=%d\n", check);
+            goto err_ret;
+        }
+
+        bc_buf_ptr_t buf_pa_init;
+
+/*liuxu, 10/18/2013, channel 0*/
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_0;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 0;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_1;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 1;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_4;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 4;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_5;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 5;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+/*liuxu, 10/18/2013, channel 1*/
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_0+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 0+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_1+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 1+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_2+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 2+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_3+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 3+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_4+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 4+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_5+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 5+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+/*liuxu, 10/18/2013, channel 2*/
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_0+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 0+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_1+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 1+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_2+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 2+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_3+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 3+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_4+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 4+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_5+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 5+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+/*liuxu, 10/18/2013, channel 3*/
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_0+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 0+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_1+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 1+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_2+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 2+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_3+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 3+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_4+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 4+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_5+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 5+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        #ifdef TI_DSP_PROCESSING
+        buf_pa_init.pa = 0x8ff00000;//liuxu, 02/12/2014, add one/idx24 for outputbuf of ti dsp processing, hard coding.
+        buf_pa_init.index = 24;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+        #endif
+
+#endif //NO_MEMCPY
+
+        if (initEGL(ioctl_var.output)) {
+            printf("ERROR: init EGL failed\n");
+            goto err_ret;
+        }
+
+        if ((ret = initTexExt(bcdev_id, &buf_info)) < 0) {
+            printf("ERROR: initTexExt() failed [%d]\n", ret);
+            goto err_ret;
+        }
+
+        if (buf_info.n > MAX_BUFFERS) {
+            printf("ERROR: number of texture buffer exceeds the limit\n");
+            goto err_ret;
+        }
+
+printf("\n--> liuxu buf number 10/12/2013, buf_info.n=%d\n", buf_info.n);
+
+        /*FIXME calc stride instead of 2*/
+        buf_size = buf_info.w * buf_info.h * 1.5;//liuxu, 9/7/2013. ?????
+        min_w    = buf_info.w < frame_w ? buf_info.w : frame_w;
+        min_h    = buf_info.h < frame_h ? buf_info.h : frame_h;
+
+        if (buf_info.h > frame_h)
+            cp_offset = (buf_info.h - frame_h) * buf_info.w;
+
+        if (buf_info.w > frame_w)
+            cp_offset += buf_info.w - frame_w;
+
+printf("\n\n\n--> liuxu checkpoint, cp_offset=%d 10/12/2013\n\n\n", cp_offset);
+
+
+        if (buf_param.type == BC_MEMORY_USERPTR) {
+            ;//liuxu, 10/10/2013, space holder.
+        }
+        else if (buf_param.type == BC_MEMORY_MMAP) {
+            for (idx = 0; idx < buf_info.n; idx++) {
+                ioctl_var.input = idx;
+
+                if (ioctl(bcfd, BCIOGET_BUFFERPHYADDR, &ioctl_var) != 0) {
+                    printf("ERROR: BCIOGET_BUFFERADDR failed\n");
+                    goto err_ret;
+                }
+
+
+                buf_paddr[idx] = ioctl_var.output;
+                buf_vaddr[idx] = (char *)mmap(NULL, buf_size,
+                                  PROT_READ | PROT_WRITE, MAP_SHARED,
+                                  bcfd, buf_paddr[idx]);
+
+                if (buf_vaddr[idx] == MAP_FAILED) {
+                    printf("ERROR: mmap failed\n");
+                    goto err_ret;
+                }
+
             }
         }
 
-        nStatus = commandQGet(pSlaveTaskMgrCmdQ->hCmdQ, &(pTempCmdMsg), (uint32_t)MessageQ_FOREVER);
+        ret = 0;
+        idx = 0;
+#endif ///#ifdef GFX_CUBE
 
+/*
+ * 以下部分进入主循环，从消息队列提取按键消息并处理，包括画面切换显示、各通道抓取图片、校正和保存参数
+ */
+    int i_put = 0;
+    int i_get = 0;
+
+    do
+    {
+
+        time1_profile = IviGetTime();
+
+        //printf("\nliuxu, before commandQGet");
+
+//#ifdef GFX_CUBE//liuxu, 06/19/2014, disable gpu by default.
+        lseek(fd_gpio, 0, SEEK_SET);
+        read(fd_gpio, &ch, 1);
+//#endif
+        ///从消息队列提取消息
+        status = commandQGet(hMessageQ, &(pTempCmdMsg), (UInt32)MessageQ_FOREVER);
+
+#if 0
+///以下部分保存校正参数
+#ifdef SAVE_PERSMAT_TO_FS  ///+，gzd， 保存校正参数到SD卡
+
+        static int i_saveFirstTime = 0; ///首次保存标志
+        if(i_saveFirstTime == 0)
+        {
+            i_saveFirstTime++;
+            FILE * dumpfilePersmat;
+
+            dumpfilePersmat = fopen("/media/mmcblk0p1/DSP_Persmat.dat", "w");//dingding change write folder to SD fat
+
+            if(dumpfilePersmat == NULL)
+            {
+                printf("\nliuxu, 04/24/2014, why creat/write /media/mmcblk0p1/DSP_Persmat.dat failed??\n");
+                return -1;
+            }
+
+            unsigned int memDevFd;
+            memDevFd = open("/dev/mem",O_RDWR|O_SYNC);
+            if(memDevFd < 0)
+            {
+                printf("\nliuxu, 04/24/2014, ERROR: /dev/mem open failed !!!\n");
+                return -1;
+            }
+
+            unsigned char *coreObjVirtBaseAddr;
+            coreObjVirtBaseAddr = mmap(
+	                (void	*)0x80000000,
+	                0x1000,
+					PROT_READ|PROT_WRITE|PROT_EXEC,
+					MAP_SHARED,
+					memDevFd,
+					0x80000000
+					);
+
+			if (coreObjVirtBaseAddr == NULL)
+        	{
+        		printf("\nliuxu, 04/24/2014, ERROR: mmap() failed !!!\n");
+        		return -1;
+        	}
+
+        	int i_writePersmatcount = fwrite(coreObjVirtBaseAddr, 1, 4*9*4, dumpfilePersmat);
+
+        	printf("\nliuxu, 04/22/2014, i_writePersmatcount=%d\n", i_writePersmatcount);
+
+        	fclose(dumpfilePersmat);
+        	close(memDevFd);
+
+        }
+#endif ///SAVE_PERSMAT_TO_FS
+#endif
+
+        //printf("\nliuxu, after commandQGet");
+
+        if (status < 0)
+        {
+            printf("\nliuxu, commandQGet error, status=0x%x\n", status);//liuxuliuxu.
+            while(1);
+        }
+
+        time5_profile = IviGetTime() - time1_profile;
+        //printf("\nliuxu, input IPC get per frame = %d ms!!", time5_profile);
+
+        time8_profile = IviGetTime();
+
+///从消息字段中提取共享存储区
         /* Get the id of the address if id is not already known. */
         nSRId = SharedRegion_getId(pTempCmdMsg);
         /* Get the shared region pointer for the address */
         srPtr = SharedRegion_getSRPtr(pTempCmdMsg, nSRId);
         /* Get the address back from the shared region pointer */
-        p2TempCmdMsg = SharedRegion_getPtr(srPtr);
-        System_printf("\n liuxuliuxu, test result is %x.\n", p2TempCmdMsg->cmdType);
+        pFrom_DSP_TempCmdMsg = SharedRegion_getPtr(srPtr);
 
-        for(i = 0; i<182; i++)
+        while(pFrom_DSP_TempCmdMsg->cmdType != 0x777)
         {
-            System_printf("\nliuxuliuxu, for, i = %d\n", i);
-            gOneframedone = 0xbb;
-            pInFrame->pBuffer = (void *)(0x91000000 + i*framesizebytes);
-            pOutFrame->pBuffer = (void *)(0x91000000 + (i)*framesizebytes);
-            /*
-            liuxu, 11/19/2013, Write your own algo here!!!! 
-            */
+            printf("\nliuxu, pFrom_DSP_TempCmdMsg->cmdType != 0x777\n");
         }
 
-        while(1);
-        
-#else//liuxuliuxu, ipc b/w M3 and DSP.
-        int i_put=0;
-        int i_get=0;
+        i_get++;
 
-        #ifdef FG_DEMO//liuxu, 11/12/2013.
-            unsigned char *outTmpbuf;
-        	outTmpbuf =(unsigned char*)0x87300000;//liuxu, 11/12/2013, hard memory for output frame, according to 128MB memory layout, 11/21/2013, 0x87000000 to 0x87200000 is for DSP_HEAP.
-        #endif
+        time9_profile = IviGetTime() - time8_profile;
+        //printf("\nliuxu, share region parser for ipc per frame = %d ms, iget=%d!!", time9_profile, i_get);
 
-		//初始化页面
-        UI_Init();
+        //k++;
+        //printf("\nliuxu, k=%d, pointerY=0x%x, pointerUV=0x%x\n", k, pFrom_DSP_TempCmdMsg->pPointer0, pFrom_DSP_TempCmdMsg->pPointer1);
 
-         /*determine which layout to use at the first time*/
-        layoutChange(0, pFrom_VPSS_M3_TempCmdMsg);
 
-		//显示默认页面
-//		Show_Page(tUIFsm.u8CurrentPage);
+#ifdef GFX_CUBE
+        //frame = frame_get(&buf_pa);
 
-        while(1)
+#ifndef NO_MEMCPY
+        ProcMgr_Handle               handle = NULL;
+
+    	status = ProcMgr_open (&handle, 0);
+
+    	//printf("\nliuxu, ProcMgr_open successful, handle=0x%x\n", handle);//liuxuliuxu.
+
+
+    	if (status < 0)
         {
-            debug_mem = 0x901;
-            nStatus = commandQGet(pSlaveTaskMgrCmdQ->hCmdQ, &(pTempCmdMsg), (uint32_t)MessageQ_FOREVER);
-            debug_mem = 0x902;
-            
-            if (nStatus < 0) {
-                System_printf("\n%s: %d: CommandQ get failed\n", __FUNCTION__, __LINE__);
-                while(1){;}
+            printf("\nliuxu, ProcMgr_open error, status=0x%x\n", status);//liuxuliuxu.
+            while(1);
+        }
+
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualY,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer0,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer0,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        ProcMgr_translateAddr (handle,
+                       &vitrualY1,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer1,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV1,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer1,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        ProcMgr_translateAddr (handle,
+                       &vitrualY2,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer2,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV2,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer2,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        ProcMgr_translateAddr (handle,
+                       &vitrualY3,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer3,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV3,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer3,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        frame = vitrualY3;//liuxu, 10/5/2013, either 0,1,2,3 can be used here or you can use them together in your app!!!!!!!!
+        frameUV = vitrualUV3;
+#else
+
+        if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_0)
+            idx = 0;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_1)
+            idx = 1;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_2)
+            idx = 2;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_3)
+            idx = 3;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_4)
+            idx = 4;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_5)
+            idx = 5;
+        else
+            idx = 0;;//liuxu, 06/19/2014, here is a RISK...//liuxu, 06/05/2014, test for PAL cam..//printf("\n\nliuxu, error!!!!\n\n");
+
+#endif ///GFX_CUBE
+
+#ifndef NO_MEMCPY
+        time3_profile = IviGetTime();
+
+        if (frame == (char *) -1)
+            break;
+
+        if (frame) {
+            if (buf_param.type == BC_MEMORY_MMAP) {
+                for (ii = 0; ii < min_h; ii++)
+                      /*FIXME calc stride instead of 2*/
+                    memcpy(buf_vaddr[idx] + buf_info.w * ii + cp_offset,
+                           frame + 736 * ii, min_w);//liuxu, 9/7/2013.
+
+                for (ii = 0; ii < min_h/2; ii++)
+                    memcpy(buf_info.w * buf_info.h + buf_vaddr[idx] + buf_info.w * ii + cp_offset,
+                           frameUV + 736 * ii, min_w);//liuxu, 9/7/2013, for UV of NV12.
+
             }
-            debug_mem = 0x903;
+            else    /*buf_param.type == BC_MEMORY_USERPTR*/
+                idx = buf_pa.index;
+        }
 
-            /* Get the id of the address if id is not already known. */
-            nSRId = SharedRegion_getId(pTempCmdMsg);
-            /* Get the shared region pointer for the address */
-            srPtr = SharedRegion_getSRPtr(pTempCmdMsg, nSRId);
-            /* Get the address back from the shared region pointer */
-            pFrom_VPSS_M3_TempCmdMsg = SharedRegion_getPtr(srPtr); 
-            debug_mem = 0x904;
+        time4_profile = IviGetTime() - time3_profile;
+        printf("\nliuxu, memory copy time per frame = %d ms!!", time4_profile);
+#else
+        if (buf_param.type == BC_MEMORY_USERPTR)
+        {
+            //printf("\nliuxu, 10/10/2013, good, idx=%d!!!\n", idx);
+        }
 
-            if(pFrom_VPSS_M3_TempCmdMsg->cmdType != 0x888) {
-                System_printf("\nliuxu, first pFrom_VPSS_M3_TempCmdMsg->cmdType != 0x888, is 0x%x\n", pFrom_VPSS_M3_TempCmdMsg->cmdType);
-                while(1){;}
-            }
-            debug_mem = 0x905;
+///响应按键消息，切换显示画面
+        if (ch == '0')  ///按键状态：触发
+    	{
+    		pressing = 1;
+    		long_press_counter++;
+    		long_pressed_trigger = 0;
+    	}
+    	else if (pressing == 1) ///按键状态：按下
+    	{
+    		 released = 1;
+    		 if(long_press_counter > 30*5)//liuxu, 06/03/2014, 5s for long press.  检测长按
+    		 {
+    		    long_press_counter = 0;
+    		    long_pressed_trigger = 1;
+    		 }
+    	}
+    	else ///按键状态：释放
+    	{
+    	    pressing = 0;
+    	    released = 0;
+    	    long_press_counter = 0;
+    	    long_pressed_trigger = 0;
+    	}
 
-            nStatus = commandQGet(pSlaveTaskMgrCmdQ->hCmdQ, &(pTempCmdMsg), (uint32_t)MessageQ_FOREVER);
-            debug_mem = 0x907;
-            
-            if (nStatus < 0) {
-                System_printf("\n%s: %d: CommandQ get failed\n", __FUNCTION__, __LINE__);
-                while(1){;}
-            }
+    	//printf("\nliuxu, 6/3/2014, ch=%c, pressing=%d, released=%d!!!\n", ch, pressing, released);
+        if(long_pressed_trigger == 1) //长按，存储拼接校正参数
+        {
+            pressing = 0;
+    	    released = 0;
+    	    long_press_counter = 0;
+    	    long_pressed_trigger = 0;
 
-            /* Get the id of the address if id is not already known. */
-            nSRId = SharedRegion_getId(pTempCmdMsg);
-            /* Get the shared region pointer for the address */
-            srPtr = SharedRegion_getSRPtr(pTempCmdMsg, nSRId);
-            /* Get the address back from the shared region pointer */
-            pFrom_VPSS_M3_TempCmdMsg2 = SharedRegion_getPtr(srPtr); 
-            debug_mem = 0x909;
-
-            if(pFrom_VPSS_M3_TempCmdMsg2->cmdType != 0x111)
-            {
-                System_printf("\nliuxu, second pFrom_VPSS_M3_TempCmdMsg2->cmdType != 0x111, is 0x%x\n", pFrom_VPSS_M3_TempCmdMsg2->cmdType);
-                while(1){;}
-            }
-
-            static unsigned int lastClockticks = 0;
-            static unsigned int thisTimeClockticks = 0;
-            
-            thisTimeClockticks = Clock_getTicks();
-            System_printf("\nliuxu, 06/04/2014, one frame@%d, counter_get0_1=%d, badcounter=%d\n", thisTimeClockticks, ++counter_get0_1, badcounter);//liuxu, 06/04/2014, support ms tick in DSP similar to M3.
-
-            if(lastClockticks != 0) {
-                if((thisTimeClockticks - lastClockticks)>44 || (thisTimeClockticks - lastClockticks)<36)
-                {
-                    badcounter++;//while(1);
-                }
-            }
-            lastClockticks = thisTimeClockticks;
-
-
-#if defined(TI_DSP_ALG) && defined(YUV422i)
-            tpHandle.frmBuffer[0] = (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer0);//liuxu, 05/27/2014, front view.
-			tpHandle.frmBuffer[1] = (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer1);//liuxu, 05/27/2014, right view.
-			tpHandle.frmBuffer[2] = (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer3);//liuxu, 05/27/2014, back view.
-			tpHandle.frmBuffer[3] = (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer2);//liuxu, 05/27/2014, left view.
-
-            firstSetOfFramesReady = 1;
-
-            if(counter_get0_1 == 1) {
-            	/*the flag indicate whether perspective matrix(PM) is valid or not,
-            	  need to set the flag to invalid, otherwise, GA will read random
-            	  PM and get crashed.*/
-            	*(unsigned int*)0x80000000 = 0xffffffff;
-            }
-
-            /*wait until TI 2d surrund view algorithm is done, and synthesis image is ready*/
-//            等待2D全景算法运算完成，并且拼接画面就绪
-            ToProcessOneSet = 1;
-            while(DoneProcessedOneSet!=1) {
-            	Task_sleep(10);//liuxu, 02/11/2014, 1ms.
-            }
-            DoneProcessedOneSet = 0;
-
-            static unsigned int totalTicks_task = 0;
-            static Word32 counter_task = 0;
-           static long unsigned int profiletick1_task = 0;
-            static long unsigned int profiletick2_task = 0;
-            profiletick1_task = _TSC_read();
-
-
-            layoutChange(ChInfoFromA8,pFrom_VPSS_M3_TempCmdMsg);//界面布局切换的话，调整界面布局
-///- gzd            if(ChInfoFromA8 == 4) {
-///-gzd             	InfoSwmsLayout = 4;
-///+gzd 原来是按键次数 = 4时，同时显示四路，现在改为按键第7次按下，也就是最后一个界面，是四路同时显示
-            if(ChInfoFromA8 == 7) {
-                 	InfoSwmsLayout = 4;
-                //edmaWarpImgCpy4(myBopTaskCtxt.hEdma, (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer3), (void *)(tpHandle.outputBuffer+320*2), 416*2, 480, 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
-                //edmaWarpImgCpy4(myBopTaskCtxt.hEdma, (void *)(tpHandle.outputBuffer), (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer0), 736*2, 480, 736*2, 736*2);//liuxu, 06/17/2014.
-            } else {
-            	/*invalidate cache before edma copy from memory to memory*/
-            	INVALIDATE_DSP_CACHE();
-
+    	    printf("\nliuxu, 06/03/2014, long pressed triggered\n");
 
 /*
- * 自定义界面框架
- */
+#ifdef SAVE_PERSMAT_TO_FS
 
-#if 1
-				Show_Page(tUIFsm.u8CurrentPage);
-				UI_Key_Process();
-//				Show_Title(TITLE_MENU);
+            unsigned char *coreObjVirtBaseAddr2;
 
-//				Show_View(VIEW_FRONT);
-//edmaWarpImgCpy4(myBopTaskCtxt.hEdma, (void *)(tpHandle.outputBuffer), (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer0),
-//		736*2, 480, 736*2, 736*2);//liuxu, 06/17/2014.
-
-
-
-//				if(tUIFsm.u8PendingCommand != 0xFF) {
-//					UI_Key_Process(tUIFsm.u8PendingCommand);
-//					tUIFsm.u8PendingCommand = 0xFF;
-//				}
-#endif
-
-#if 0
-            	//以下拼接显示画面Buffer后，DMA传输送交显示
-            	//window 0 : synthesis view
-                if(win_Width[0] != 0 && win_Height[0] != 0){
-                	edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-                		(void *)(srcBuf[0] + 736 * 2 * crop_startY[0] + crop_startX[0] * 2),
-                		(void *)(tpHandle.outputBuffer + win_startX[0] * 2 + 736 * 2 * win_startY[0]),
-                		win_Width[0] *2, win_Height[0], 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
-                }
-
-            	//window 1: single camera view
-                if(win_Width[1] != 0 && win_Height[1] != 0){
-                	edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-                		(void *)(srcBuf[1] + 736 * 2 * crop_startY[1] + crop_startX[1] * 2),
-                		(void *)(tpHandle.outputBuffer + win_startX[1] * 2 + 736 * 2 * win_startY[1]),
-                		win_Width[1] *2, win_Height[1], 736*2, 736*2);//liuxu, 06/19/2014, single view in output buffer first.
-                }
-                //window 2: car box
-                if(win_Width[2] != 0 && win_Height[2] != 0){
-                	edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-                		(void *)(srcBuf[2] 	+ 736 * 2 * crop_startY[2] + crop_startX[2] * 2),
-                		(void *)(tpHandle.outputBuffer + win_startX[2] * 2 + 736 * 2 * win_startY[2]),
-                		win_Width[2] * 2, win_Height[2], win_Width[2] * 2, 736*2);//liuxu, 02/20/2014, for Y logo.
-                }
-
-                //window 3: osd
-                if(win_Width[3] != 0 && win_Height[3] != 0){
-                	edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-                		(void *)(srcBuf[3] + 736 * 2 * crop_startY[3] + crop_startX[3] * 2),
-                		(void *)(tpHandle.outputBuffer + win_startX[3] * 2 + 736 * 2 * win_startY[3] ),
-                		win_Width[3] * 2, win_Height[3], 480*2, 736*2);//liuxu, 06/17/2014.
-                }
-
-#if 0
-              //window 4: 自定义界面
-                if(win_Width[4] != 0 && win_Height[4] != 0){
-//            		memset((void *)tpHandle.outputBuffer, 0x80, 736*480*2); //填充黑色，这个是灰色，待调
-
-                    edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-                		(void *)(menu_Buf + 736 * 2 * crop_startY[9] + crop_startX[9] * 2),
-                		(void *)(tpHandle.outputBuffer + win_startX[9] * 2 + 736 * 2 * win_startY[9] ),
-                		win_Width[9] * 2, win_Height[9], win_Width[9]*2, 736*2);//liuxu, 06/17/2014.
-
-                    edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-                		(void *)(srcBuf[4] + 736 * 2 * crop_startY[4] + crop_startX[4] * 2),
-                		(void *)(tpHandle.outputBuffer + win_startX[4] * 2 + 736 * 2 * win_startY[4] ),
-                		win_Width[4] * 2, win_Height[4], win_Width[4]*2, 736*2);//liuxu, 06/17/2014.
-
-            		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-                		(void *)(srcBuf[5] + 736 * 2 * crop_startY[5] + crop_startX[5] * 2),
-                		(void *)(tpHandle.outputBuffer + win_startX[5] * 2 + 736 * 2 * win_startY[5] ),
-                		win_Width[5] * 2, win_Height[5], win_Width[5]*2, 736*2);//liuxu, 06/17/2014.
-
-            		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-                		(void *)(srcBuf[6] + 736 * 2 * crop_startY[6] + crop_startX[6] * 2),
-                		(void *)(tpHandle.outputBuffer + win_startX[6] * 2 + 736 * 2 * win_startY[6] ),
-                		win_Width[6] * 2, win_Height[4], win_Width[6]*2, 736*2);//liuxu, 06/17/2014.
-
-            		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-                		(void *)(srcBuf[7] + 736 * 2 * crop_startY[7] + crop_startX[7] * 2),
-                		(void *)(tpHandle.outputBuffer + win_startX[7] * 2 + 736 * 2 * win_startY[7] ),
-                		win_Width[7] * 2, win_Height[7], win_Width[7]*2, 736*2);//liuxu, 06/17/2014.
-
-            		edmaWarpImgCpy4(myBopTaskCtxt.hEdma,
-                		(void *)(srcBuf[8] + 736 * 2 * crop_startY[8] + crop_startX[8] * 2),
-                		(void *)(tpHandle.outputBuffer + win_startX[8] * 2 + 736 * 2 * win_startY[8] ),
-                		win_Width[8] * 2, win_Height[8], win_Width[8]*2, 736*2);//liuxu, 06/17/2014.
-               }
-#endif
-                edmaWarpImgCpy4(myBopTaskCtxt.hEdma, (void *)(tpHandle.outputBuffer), (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer0),
-                		736*2, 480, 736*2, 736*2);//liuxu, 06/17/2014.
-
-#endif
-                InfoSwmsLayout = 0;
-            }
-#endif
-
-#ifdef A8_CommInTask
-            #ifdef FOUR_IN_ONE_D1//liuxu, 12/19/2013.
-            edmaWarpImgCpy3(myBopTaskCtxt.hEdma, (pFrom_VPSS_M3_TempCmdMsg2->pY_Pointer1), (pFrom_VPSS_M3_TempCmdMsg2->pY_Pointer0)+360, 360, 240);
-            edmaWarpImgCpy3(myBopTaskCtxt.hEdma, (pFrom_VPSS_M3_TempCmdMsg2->pY_Pointer2), (pFrom_VPSS_M3_TempCmdMsg2->pY_Pointer0)+736*240, 360, 240);
-            edmaWarpImgCpy3(myBopTaskCtxt.hEdma, (pFrom_VPSS_M3_TempCmdMsg2->pY_Pointer3), (pFrom_VPSS_M3_TempCmdMsg2->pY_Pointer0)+736*240+360, 360, 240);
-
-            edmaWarpImgCpy3(myBopTaskCtxt.hEdma, (pFrom_VPSS_M3_TempCmdMsg2->pUV_Pointer1), (pFrom_VPSS_M3_TempCmdMsg2->pUV_Pointer0)+360, 360, 120);
-            edmaWarpImgCpy3(myBopTaskCtxt.hEdma, (pFrom_VPSS_M3_TempCmdMsg2->pUV_Pointer2), (pFrom_VPSS_M3_TempCmdMsg2->pUV_Pointer0)+736*120, 360, 120);
-            edmaWarpImgCpy3(myBopTaskCtxt.hEdma, (pFrom_VPSS_M3_TempCmdMsg2->pUV_Pointer3), (pFrom_VPSS_M3_TempCmdMsg2->pUV_Pointer0)+736*120+360, 360, 120);
-            #endif
-
-            mutualTaskCmdMsg.pY_Pointer0 = (void *)(pFrom_VPSS_M3_TempCmdMsg2->pY_Pointer0);
-            mutualTaskCmdMsg.pUV_Pointer0 = (void *)(pFrom_VPSS_M3_TempCmdMsg2->pUV_Pointer0);
-
-            mutualTaskCmdMsg.pY_Pointer1 = (void *)(pFrom_VPSS_M3_TempCmdMsg2->pY_Pointer1);
-            mutualTaskCmdMsg.pUV_Pointer1 = (void *)(pFrom_VPSS_M3_TempCmdMsg2->pUV_Pointer1);
-
-            mutualTaskCmdMsg.pY_Pointer2 = (void *)(pFrom_VPSS_M3_TempCmdMsg2->pY_Pointer2);
-            mutualTaskCmdMsg.pUV_Pointer2 = (void *)(pFrom_VPSS_M3_TempCmdMsg2->pUV_Pointer2);
-
-            mutualTaskCmdMsg.pY_Pointer3 = (void *)(pFrom_VPSS_M3_TempCmdMsg2->pY_Pointer3);
-            mutualTaskCmdMsg.pUV_Pointer3 = (void *)(pFrom_VPSS_M3_TempCmdMsg2->pUV_Pointer3);
-
-            mutualTaskCmdMsg.cmdType = 0x777;
-            //System_printf("\nliuxu, 111--02/12/2014, mutualTaskCmdMsg.pY_Pointer0 == 0x%x\n", mutualTaskCmdMsg.pY_Pointer0);//liuxu, 11/20/2013, dsp print could make the flow very slow. 
-
-#endif
-
-#ifdef FG_DEMO
-??
-            profiletick1 = _TSC_read();
-            surroundViewProcess(pFrom_VPSS_M3_TempCmdMsg->pPointer0, pFrom_VPSS_M3_TempCmdMsg->pPointer2,  \
-            		pFrom_VPSS_M3_TempCmdMsg->pPointer3, pFrom_VPSS_M3_TempCmdMsg->pPointer1, (void*)outTmpbuf);
-            profiletick2 = _TSC_read();
-            System_printf("\n%lu: liuxu, surroundViewProcess!!!", (profiletick2-profiletick1));
-            		
-            pInFrame->pBuffer = (void *)(outTmpbuf);
-            pOutFrame->pBuffer = (void *)(pFrom_VPSS_M3_TempCmdMsg->pPointer0);
-            profiletick3 = _TSC_read();
-
-            edmaWarpImgCpy2(myBopTaskCtxt.hEdma, pInFrame->pBuffer, pOutFrame->pBuffer, 736, 480);//liuxu, 11/12/2013.
-            profiletick4 = _TSC_read();
-            System_printf("\n%lu: liuxu, edmaWarpImgCpy2!!!\n\n", (profiletick4-profiletick3));
-#endif
-
-            profiletick2_task = _TSC_read();
-            counter_task ++;
-            totalTicks_task += (profiletick2_task-profiletick1_task);
-
-            if(counter_task % 20 == 0)
+            unsigned int memDevFd2;
+            memDevFd2 = open("/dev/mem",O_RDWR|O_SYNC);
+            if(memDevFd2 < 0)
             {
-            	if(counter_task % 600 == 0)
-            		Vps_rprintf(" %lu:dspAppTask!!!\n", totalTicks_task/20);
-            	totalTicks_task = 0;
+                printf("\nliuxu, 04/24/2014, ERROR: /dev/mem open failed for load!!!\n");
+                return -1;
             }
 
-            //liuxu, ACK back to M3 to procceed the next frame. 
-            pDSP_To_VPSS_M3_TempCmdMsg->cmdType = (0x999 << 16) | InfoSwmsLayout;//liuxu, 06/19/2014, RISK... Be careful rev of mapping.
-            debug_mem = 0x917;
+            coreObjVirtBaseAddr2 = mmap(
+                    (void	*)0x80000000,
+                    0x1000,
+    				PROT_READ|PROT_WRITE|PROT_EXEC,
+    				MAP_SHARED,
+    				memDevFd2,
+    				0x80000000
+    				);
 
-            nStatus = commandQPut(pSlaveTaskMgrCmdQ->nCmdQId, (MessageQ_Msg )pDSP_To_VPSS_M3_TempCmdMsg);
-            debug_mem = 0x918;
-            
-            if (nStatus < 0)  {
-                System_printf("\n%s: %d: CommandQ put failed\n", __FUNCTION__, __LINE__);
-                while(1){;}
+    		if (coreObjVirtBaseAddr2 == NULL)
+        	{
+        		printf("\nliuxu, 04/24/2014, ERROR: mmap() failed for load!!!\n");
+        		return -1;
+        	}
+
+            *((unsigned int *)coreObjVirtBaseAddr2) = 0xFFFFFFFF;//liuxu, 04/24/2014, clear to tag in case no exsiting persmat.dat, so that the DSP use the one built in code.
+
+            FILE * dumpfilePersmat_ForLoad;
+
+            dumpfilePersmat_ForLoad = fopen("/media/mmcblk0p1/DSP_Persmat.dat", "r");//liuxu, 04/24/2014, just failed if no exsiting.
+
+
+            if(dumpfilePersmat_ForLoad == NULL)
+            {
+                printf("\nliuxu, 06/03/2014, /media/mmcblk0p1/DSP_Persmat.dat doesn't exist, no GA this time\n");
             }
-            debug_mem = 0x919;
+            else
+            {
+                int i_readPersmatcount = fread (coreObjVirtBaseAddr2, 1, 4*9*4, dumpfilePersmat_ForLoad);
+                printf("\nliuxu, 06/03/2014, for GA this time, i_readPersmatcount=%d bytes\n", i_readPersmatcount);
+                fclose(dumpfilePersmat_ForLoad);
+                close(memDevFd2);
+
+                *((unsigned int *)(coreObjVirtBaseAddr2 + 0x888)) = 0x88888888;
+///                i_saveFirstTime = 0;//liuxu, 06/03/2014, ready for fwrite/saving permat during next frame.
+
+            }
+#endif
+*/
+
         }
+    	else if((pressing == 1) && (released == 1))//liuxu, 10/18/2013, bug to improve, when rapidly press and release, the behavior may depends by chance.
+    	{
+    	    printf("\n\nliuxu, 10/18/2013, a normal key detected!!!\n\n");
+    	    pressing = 0;
+    	    released = 0;
+
+    	    channelNo++;
+    	    channelNo = channelNo%4; ///循环计数通道，总共四路摄像头
+
+    	    ChInfoToDSP++;
+///-gzd, 20150515    	ChInfoToDSP = ChInfoToDSP%7;//liuxu, 06/20/2014, add two cases for shuffling grx and video pipeline.//liuxu, 06/19/2014, for 5 layouts pattern of DSP and M3.
+    	    ChInfoToDSP = ChInfoToDSP%8;///+ gzd,20150515 根据显示效果，取消立方体显示
+
+     	    printf("\n\n >>> channelNo = %d, ChInfoToDSP = %d\n",channelNo, ChInfoToDSP);
+
+    	    if(ChInfoToDSP == 5)
+    	    {
+//    	        system("echo 1,0/0/0/0 > /sys/devices/platform/vpss/display2/order");//liuxu, 06/20/2014, grx0 up.
+    	    }
+    	    else if (ChInfoToDSP == 6)
+    	    {
+    	    	///gzd 取消立方体显示
+    	    	///- gzd system("echo 1,3/0/0/0 > /sys/devices/platform/vpss/display2/order");//liuxu, 06/20/2014, video up.
+    	    }
+
+    	    //liuxu, 02/19/2014, add key pad function.
+    	    if(channelNo == 1)
+    	    {
+                //system("echo 1,3/0/0/0 > /sys/devices/platform/vpss/display2/order");//liuxu, 06/03/2014, video pipeline on the top.
+    	        //system("echo 0 > /sys/devices/platform/vpss/graphics0/enabled");
+    	        //liuxu, 06/03/2014, no grx2 now. system("echo 0 > /sys/devices/platform/vpss/graphics2/enabled");
+    	    }
+    	    else if (channelNo == 2)
+    	    {
+    	        //system("echo 1,0/0/0/0 > /sys/devices/platform/vpss/display2/order");//liuxu, 06/03/2014, grx0 pipeline on the top.
+    	        //system("echo 1 > /sys/devices/platform/vpss/graphics0/enabled");
+    	    }
+    	    else if (channelNo == 3)
+    	    {
+    	        //system("echo 1 > /sys/devices/platform/vpss/graphics2/enabled");
+    	    }
+    	}
+    	//printf("\nliuxu, after drawCube, ch=%d, pressing=%d, released=%d", ch, pressing, released);
 #endif
-    }while(0);
-    System_printf("\nliuxuliuxu, %s: %d: DSP Lite shouldn't be here \n", __FUNCTION__, __LINE__);
-}
 
-/*************************************************************************
- *  @func       TI_dsp_Processing
- *
- *  @param[in]   arg0: task argument0
- *  @param[in]   arg1: task argument1
- *  @brief
- *               main task in which TI 2D
- *
- *  @returns    none
- ************************************************************************/
-Void TI_dsp_Processing(UArg arg0, UArg arg1)//liuxu, 01/22/2014, China port. 
-{	
-	static Word32 *inpersmatPtr;
-	static int flagGASuccess = 0;
-	static FlashStruct FS;
-	static PERSMAT_SRC bPersmatSrc = 0;
-	static int eraseFlash = 0;
+        time3_profile = IviGetTime();
 
-	Word32 j =0 , i = 0;
-	static Word32 counter = 0;
-	static unsigned int totalTicks = 0;
-	static unsigned int totalTicks1 = 0;
-	static unsigned int totalTicks2 = 0;
+ #ifdef TI_DSP_PROCESSING
 
-	static long unsigned int profiletick1 = 0;
-	static long unsigned int profiletick2 = 0;
-	static long unsigned int profiletick3 = 0;
-	static long unsigned int profiletick4 = 0;
+        if(idx == 24)
+            drawCube(24, 24);//liuxu, 02/12/2014//liuxu, 06/02/2014, add 2nd parameter for side view.
+        else
+            drawCube(24, idx+channelNo*InterChannelIndexOffset);//liuxu, 02/12/2014//liuxu, 06/02/2014, add 2nd parameter for side view.
+
+ #else
+///- gzd 20150515        drawCube(idx+channelNo*InterChannelIndexOffset, 0);//liuxu, 06/19/2014, snd para is useless when disabled "DIRECT_SHOW" and "SIDE_VIEW"
+ #endif
+        time4_profile = IviGetTime() - time3_profile;
+       // printf("\nliuxu, drawCube time per frame = %d ms!!", time4_profile);
+
+#ifndef NO_MEMCPY
+        idx = (idx + 1) % buf_info.n;
+#endif
+
+#endif
+
+#ifdef MPEG4_ENCODER//liuxu, 8/21/2013, MPEG4 Encoder.
+
+    	//pInputYUV = (unsigned char *)malloc(sizeof(unsigned char) * (lumalen + chromalen * 2) + alignment);
+    	//alignoffset = alignment - (((unsigned int) pInputYUV) % alignment);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualY,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer0,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer0,
+                       ProcMgr_AddrType_SlaveVirt);
+
+#if 0//liuxu, 12/24/2013. //liuxu, 12/19/2013, move to another thread.
+        static int k = 0;
+        int time1, time2;
+        static int sum_time = 0;
+
+        k++;
 
 
-	//liuxu, 02/14/2014, init edma in the exact thread using it.
-	edmaInit(&myBopTaskCtxt);
+    	InputFrame.pY = vitrualY;//pInputYUV + alignoffset;
+    	InputFrame.pU = vitrualUV;//InputFrame.pY + lumalen;
+    	InputFrame.pV = NULL;//InputFrame.pU + chromalen;//liuxu, 8/21/2013, just two points for NV12.
 
-	while(debugStopFlag)
-	{
-		Task_sleep(1);
-	}
+    	InputFrame.TimeStamp = k;		// time stamp!
+		InputFrame.userDoNotEncode = iviFalse;		// encode this frame!
 
-	spiFlashRead(SRV_PARAM_START_ADDR, sizeof(FlashStruct)/*4+4+3*3*9*4*/, &FS);
-	//read flash, fill FS
-	if(FS.magicNumber == 0x123456){
-		//flash has been written once
-		if(FS.updateFlag == 1){
-			inpersmatPtr = FS.inpersmatPtr;
-			bPersmatSrc = PERSMAT_FLASH;
-		}
-	} else {
-		inpersmatPtr = persmatin;
-		bPersmatSrc = PERSMAT_HARDCODING;
-	}
+		//If the user decides to drop the frame, then no matter what rc has decided the frame will be dropped.
+		if (InputFrame.userDoNotEncode)
+			InputFrame.DoNotEncode = InputFrame.userDoNotEncode;
 
-	/*for debug: during process, check if 0x80000000 is not 0xFFFFFFFF, which means
-	 app_host has put valid persmat*/
-	bPersmatSrc = PERSMAT_DDR;
+		time1 = IviGetTime();
 
-	Vps_rprintf("[TI_dsp_Processing] %x %x,%x %x %x\n",
-			FS.magicNumber, FS.updateFlag, inpersmatPtr[0],inpersmatPtr[1],inpersmatPtr[2]);
-
-	/*
-	 * 设置车辆图标尺寸
-	 */
-	ti_srv_control_static(GA_S_CARBOX_SIZE_H, 240, NULL );
-	ti_srv_control_static(GA_S_CARBOX_SIZE_W, 80, NULL ); //
-	/*
-	 * 设置焦距
-	 * Set focal length in pixel unit which will be also used in Math model,
-	 * default value is 255. Typically get it from lens vendor or estimation.
-	 */
-	ti_srv_control_static(GA_S_FOCAL_LENGTH, 247, NULL );
-	/*
-	 * 设置混合区域
-	 * Set the width of blending region in pixel unit, blending will smooth the transition between two regions.
-	 * but will introduce ghosting in blended area.
-	 */
-	ti_srv_control_static(SYNT_S_BLENDING_LENGTH, 25, NULL ); //127
-	/*
-	 * 设置水平旋转角度
-	 * Adjust the rotation angle of synthesis seam, to avoid selecting images from lens edge which
-	 * will have bad quality(low resolution).
-	 */
-	ti_srv_control_static(SYNT_S_SEAM_HORIZONTAL_SHIFT, -70, NULL ); //-100
-	/*
-	 * 设置双线性差值
-	 * Enable Bilinear interpolation features during synthesis process,
-	 * which will cause the ti_srv_create takes longer time to initialize the Bilinear coefficient table,
-	 * only make performance degrade in run time, which means sProcessFunc takes longer time as well.
-	 */
-	ti_srv_control_static(SYNT_S_BILINEAR_INTERPOLATION, 2, NULL); //select 2 Enable Bilinear Intepolation
-	/*
-	 * equisolid model 等实体模型
-	 * Set math model which mostly matches the lens, by default,value 0 indicate that equisolid model is used,
-	 */
-	ti_srv_control_static(GA_S_SELECTLENSMODEL, 0, VendorLUTin ); //select 0 which means default equisolid model
-
-	/* call create at the first time to initialize Library*/
-//	初始化TI算法库
-	ti_srv_create(inpersmatPtr);
-
-#if ENABLE_SINGLE_VIEW_FD
-	/* create Single view Lookup Table*/
-	Vps_rprintf("create Single View lookup Table");
-	int *singleViewLut ;
-	singleViewLut = AllocatePersisGlobalMemory(736*480);//[720][480];
-	float in,jn;
-	for(j = 0; j < 480; j++)
-	{
-		for(i = 0; i < 736; i++)
+		if ( FAILED(MP4VEncSP_EncodeFrame(pEncoder, &InputFrame)) )
 		{
-			singleCamFisheyeTransform(240,1.8, i-30, j ,736, 480,&in,&jn );
-			 int t1 = ( int)in;
-			 t1 <<= 16;
-			 int t2 = ( int)jn;
-			singleViewLut[j*736+i] = t1+t2;
+		    printf("\nliuxu, MP4VEncSP_EncodeFrame Failed!!\n");
 		}
-	}
-	memRearCamAfterFishEyeCorrection = (Byte *)AllocatePersisGlobalMemory(736*480/2);
+
+		time2 = IviGetTime() - time1;
+
+        printf("\nliuxu, k=%d, encoding per frame=%d-ms", k, time2);
+
+
+		sum_time += time2;
+
+		if(k == 1200)
+		{
+            printf("\nliuxu, k=%d, pointerY=0x%x, pointerUV=0x%x, pFrom_DSP_TempCmdMsg->pY_Pointer0=0x%x, pFrom_DSP_TempCmdMsg->pUV_Pointer0=0x%x\n", k, vitrualY, vitrualUV, pFrom_DSP_TempCmdMsg->pY_Pointer0, pFrom_DSP_TempCmdMsg->pUV_Pointer0);
+            printf("liuxu, timestamp=%d, Average FPS is %f!\n", time1+time2, 1200 * 1000.0 / sum_time);
+
+            while(1);
+
+		}
+#else
+        video_Y_PointerFifo[writeIdx%4] = vitrualY;
+    	video_UV_PointerFifo[writeIdx%4] = vitrualUV;
+    	writeIdx++;
+    	printf("\nliuxu, 12/19/2013, writeIdx = %d, readIdx = %d!!", writeIdx, readIdx);
+
+#ifdef ONE_THREAD_TEST
+    	sleep(5000);//liuxu, 12/19/2013, this is in unit of second???
+#endif
 
 #endif
 
-	/* main process block*/
-	while(1) {
-        if(ToProcessOneSet)   {
-            ToProcessOneSet = 0;
-            flagGASuccess = 0;
+#endif
 
-            //long push of trigger button
-            /*	检查长按标志，这个标志是在A8程序如下位置设置的
-             *  L1653 *((unsigned int *)(coreObjVirtBaseAddr2 + 0x888)) = 0x88888888;
-             *  MATLAB生成的DSP_Persmat.dat文件拷贝到SD卡后，A8程序读取该文件后，设置共享内存，给DSP访问；
-             *  A8同时设置长按键标志，由DSP轮询检测
-             */
-            if(*(unsigned int*)0x80000888 == 0x88888888 )
-            {
-            	/* in case of calibration for 4 cameras give 1,
-            	 * inc case of calibration for 3 cameras(L,R,B), give 2
-            	*/
-            	/*
-            	 * trigger Geometric alignment process.
-            	 */
-            	ti_srv_control_dynnamic(GA_S_TRIGGER, 1, NULL);
+//liuxu, 11/19/2013, ACK to DSP.
+        time6_profile = IviGetTime();
 
-            	/*check 0x80000000, see if app_host put permatrix here*/
-            	if(bPersmatSrc == PERSMAT_DDR &&  ( *(unsigned int *)0x80000000 ) != 0xFFFFFFFF  )//liuxu, 04/24/2014, dump the memory snapshot of sv->persmat.
-            	{
-            		Vps_rprintf("[Alg_GeometricAlignmentProcess]copy from DDR 0x80000000");
-            		///+ gzd，此处从DSP_Persmat.dat读出144字节参数数据，正好是文件大小
-            		memcpy((void *)inpersmatPtr, (void *) 0x80000000, 4*9*4);//liuxu, 04/24/2014, updated from A8 FS.
+//        将按键消息通过Queue传给DSP，ChInfoToDSP是按键消息
+        cmdMsg->cmdType = (0x666 << 16 ) | ChInfoToDSP;//liuxu, 06/19/2014, pass info to DSP then M3 through DSP.//liuxu, 8/20/2013, ACK only.
 
-            	}
+        status = commandQPut(RemoteDspQId, (MessageQ_Msg )cmdMsg);
 
-        		*(unsigned int*)0x80000888 = 0x0;
+        if (status < 0)
+        {
+            printf("\nliuxu, commandQPut error, status=0x%x\n", status);//liuxuliuxu.
+            while(1);
+        }
+
+        i_put++;
+
+        time7_profile = IviGetTime() - time6_profile;
+        //printf("\nliuxu, output IPC put per frame = %d ms, iput=%d!!", time7_profile, i_put);
+
+
+        time2_profile = IviGetTime() - time1_profile;
+        //liuxu, 06/16/2014, printf("\nliuxu, total time per frame = %d ms!!\n\n\n", time2_profile);
+
+        //usleep(20000);//liuxu, 12/23/2013, usleep 20ms to yield to mpeg4 encoder thread.
+
+
+    }while(1);
+
+leave:
+    printf("<-- Main_main leave:\n");//liuxu, 8/19/2013.
+
+#ifdef MPEG4_ENCODER
+     pthread_join (thread_id, NULL);//liuxu, 12/19/2013.
+#endif
+
+    status = (status >= 0 ? 0 : status);
+    return (status);
+
+#ifdef GFX_CUBE
+err_ret:
+        if (buf_param.type == BC_MEMORY_MMAP) {
+            for (idx = 0; idx < buf_info.n; idx++) {
+                if (buf_vaddr[idx] != MAP_FAILED)
+                    munmap(buf_vaddr[idx], buf_size);
             }
+        }
+        if (bcfd > -1)
+            close(bcfd);
 
-            /*main process block*/
-            //int ti_srv_process(Word32 *inpersmatPtr, int *flagGASuccess)
-            {
-            	//retreive frame pointer
-                for(j=0;j<tpHandle.numCameras; j++){	//liuxu, 02/11/2014, refill the input frames pointers.
-            		inPtr[0][j] = (uWord32 *)tpHandle.frmBuffer[j]; // For Y plane
-            		inPtr[1][j] = (uWord32 *)(tpHandle.frmBuffer[j]+Input_GridSize); // For UV plane
-            	}
-                //UInt hwiKey;
-                //hwiKey = Hwi_disable();//liuxu, 06/06/2014, this disable hwi too long to impact the timer/clock_ticks and so on.
+        deInitEGL(buf_info.n);
+        frame_cleanup();
 
-                //PROFILING..........
-                profiletick1 = _TSC_read();
+        close(fd_gpio);
 
-                sProcessFunc(svSHandle,  inPtr, inPitch,
-                                         outPtr, outPitch,
-            							 (uWord32 *)GPtr1, (uWord32 *)GPtr2,
-            							 PPtr4,  PPtr3, //outStatLUTPtr
-            							 dataFormat,
-            							 (uWord32)tpHandle.SYN_method,  (uWord32)tpHandle.SYN_Intepolation_mode
-
-                 );
-
-            	//PROFILING..........
-            	 profiletick2 = _TSC_read();
-            	 totalTicks += (profiletick2-profiletick1);
-
-                 //liuxu, 05/16/2014, add the support for PA frame by frame!!!
-                 if(counter_get0_1 % counter_get0_1_freq == 0)//liuxu, 06/05/2014, do PA every 100 frames/3s.
-                 {
-                	 pProcessFunc(svPHandle, PPtr3, PPtr4,
-                                         dataFormat, PHOTOMETRIC_ALIGNMENT_ON);
-                 }
-
-                 //PROFILING..........
-            	 profiletick3 = _TSC_read();
-            	 totalTicks1 += (profiletick3-profiletick2);
-
-#if ENABLE_SINGLE_VIEW_FD
-
-            	for(j = 40; j < 440; j++)
-            	{
-            		unsigned short *pSingleViewLut = (unsigned short*)(singleViewLut+j*736);
-            		Byte * pMemRearCam = memRearCamAfterFishEyeCorrection + j*736*2 ;
-            		unsigned short t1;
-            		unsigned short t2;
-            		for(i = 160; i < 560; i++)
-            		{
-            			//unsigned short t1 = singleViewLut[j*736+i] >> 16;
-            			//unsigned short t2 = singleViewLut[j*736+i] & 0xFFFF;
-#if 0
-            			//t1 = pSingleViewLut[i+i+1];
-            			//t2 = pSingleViewLut[i+i+2];
-
-            			//pMemRearCam[i+i] = ((Byte *)inPtr[0][2])[  t2*1472+t1+t1];
-              			//pMemRearCam[i+i+1] = ((Byte *)inPtr[0][2])[  t2*1472+t1+t1 + 1];
+        printf("liuxu, CUBE done\n");
+        return ret;
 #endif
-            			pMemRearCam[i+i] = ((Byte *)inPtr[0][2])[  pSingleViewLut[i+i+2]*1472+pSingleViewLut[i+i+1]+pSingleViewLut[i+i+1]];
-            			pMemRearCam[i+i+1] = ((Byte *)inPtr[0][2])[  pSingleViewLut[i+i+2]*1472+pSingleViewLut[i+i+2]+pSingleViewLut[i+i+2] + 1];
 
-
-#if 0
-            			memRearCamAfterFishEyeCorrection[(j*736+i) * 2] = 		((Byte *)inPtr[0][2])[  (t2*736+t1) * 2];
-            			if(i&1 == t1&1)
-            				memRearCamAfterFishEyeCorrection[(j*736+i) * 2 + 1] =	((Byte *)inPtr[0][2])[  (t2*736+t1) * 2 + 1];
-            			else
-            				memRearCamAfterFishEyeCorrection[(j*736+i) * 2 + 1] =	((Byte *)inPtr[0][2])[  (t2*736+t1+1) * 2 + 1];
+}
+#endif ///LEGACY_MAIN
 #endif
-            		}
-            	}
-#endif
-            	profiletick4 = _TSC_read();
-            	totalTicks2 += (profiletick4-profiletick3);
+
+#if 0//liuxu, 10/17/2013, quicktest is just a test for 3D cube of color bar.
+Int quicktest_Main_main(Void)
+{
+    UInt16      remoteProcId;
+    Int         status = 0;
+    Int         printremoteProcId = 0xff;
+
+    MessageQ_Msg pTempCmdMsg = NULL;//liuxu, 8/20/2013.
+    UInt16 nSRId = 0u;
+    SharedRegion_SRPtr srPtr = {0u};
+    cfg4Pointers_t *pFrom_DSP_TempCmdMsg = NULL;
+    Int         k = 0;
+
+    unsigned char *vitrualY;
+    unsigned char *vitrualUV;
+     int bcfd = -1; 
+        char bcdev_name[] = "/dev/bccatX";
+        BCIO_package ioctl_var;
+        bc_buf_params_t buf_param;
+        bc_buf_ptr_t buf_pa;
+
+        unsigned long buf_paddr[MAX_BUFFERS];
+        char *buf_vaddr[MAX_BUFFERS] = { MAP_FAILED };
+        char *frame = NULL;
+        int buf_size = 0;
+        int c, idx, ret = -1;
+        char opts[] = "pw:t:b:h";
+
+        int   ii;
+        int   frame_w, frame_h;
+        int   min_w = 0, min_h = 0;;
+        int   cp_offset = 0;
+
+        struct timeval tvp, tv, tv0 = {0,0};
+        unsigned long tdiff = 0;
+        unsigned long fcount = 0;
+    
+
+    printf("--> Main_main:\n");
+    
 
 
-                 if(triggerGA)
-                 {
-              		int get_value[4];
-               	    gProcessFunc(svGHandle,inPtr,	inPitch,	GPtr1,	GPtr2,	inpersmatPtr,
-             								1,	dataFormat,	0,	&flagGASuccess);
+        if (frame_init(&buf_param))
+            return -1;
 
-               	    /*
-               	     * Get Matched features in overlapped region, GA may fail if features found in two neighbor
-               	     * region is not enough.The order of Four values is region 1, region 0, region 3, region 2.
-               	     */
-             		ti_srv_control_dynnamic(GA_G_GETMATCHES, 0, get_value);
-             		Vps_rprintf("[ti_srv_process] GAFlag:%d 2_1reg1:%d 1_0reg0:%d 0_3reg3:%d 3_2reg2:%d",
-             				flagGASuccess,get_value[0], get_value[1],get_value[2], get_value[3]);
+        bcdev_name[strlen(bcdev_name)-1] = '0' + bcdev_id;
 
+        if ((bcfd = open(bcdev_name, O_RDWR|O_NDELAY)) == -1) {
+            printf("ERROR: open %s failed\n", bcdev_name);
+            goto err_ret;
+        }
 
-            		triggerGA = 0;
-            	}
+        frame_w = buf_param.width;
+        frame_h = buf_param.height;
 
+        if (min_w > 0 && !(min_w % 8))
+            buf_param.width = min_w;
 
-            	counter ++;
-                if(counter % 20 == 0)
-                {
-                	if(counter % 200 == 0)
-                	{
-                		Vps_rprintf("-------------");
-                		Vps_rprintf(" %lu:Alg_SynthesisProcess cycles[%lu]!!!\n", totalTicks/20, counter);
-                		Vps_rprintf(" %lu:Alg_PAProcess cycles[%lu]!!!\n", totalTicks1/20, counter);
-                		Vps_rprintf(" %lu:single view cycles[%lu]!!!\n", totalTicks2/20, counter);
-                		                		Vps_rprintf("-------------\n\n");
-                	}
-                	totalTicks = 0;
-                	totalTicks1 = 0;
-                	totalTicks2 = 0;
+        if (min_h > 0)
+            buf_param.height = min_h;
+     
+        if (ioctl(bcfd, BCIOREQ_BUFFERS, &buf_param) != 0) {
+            printf("ERROR: BCIOREQ_BUFFERS failed\n");
+            goto err_ret;
+        }
 
+        if (ioctl(bcfd, BCIOGET_BUFFERCOUNT, &ioctl_var) != 0) {
+            goto err_ret;
+        }
+
+        if (ioctl_var.output == 0) {
+            printf("ERROR: no texture buffer available\n");
+            goto err_ret;
+        }
+
+        if (initEGL(ioctl_var.output)) {
+            printf("ERROR: init EGL failed\n");
+            goto err_ret;
+        }
+     
+        if ((ret = initTexExt(bcdev_id, &buf_info)) < 0) {
+            printf("ERROR: initTexExt() failed [%d]\n", ret);
+            goto err_ret;
+        }
+
+        if (buf_info.n > MAX_BUFFERS) {
+            printf("ERROR: number of texture buffer exceeds the limit\n");
+            goto err_ret;
+        }
+
+        /*FIXME calc stride instead of 2*/
+        buf_size = buf_info.w * buf_info.h * 2;
+        min_w    = buf_info.w < frame_w ? buf_info.w : frame_w;
+        min_h    = buf_info.h < frame_h ? buf_info.h : frame_h;
+
+        if (buf_info.h > frame_h)
+            cp_offset = (buf_info.h - frame_h) * buf_info.w;
+
+        if (buf_info.w > frame_w)
+            cp_offset += buf_info.w - frame_w;
+
+        if (buf_param.type == BC_MEMORY_MMAP) {
+            for (idx = 0; idx < buf_info.n; idx++) {
+                ioctl_var.input = idx;
+
+                if (ioctl(bcfd, BCIOGET_BUFFERPHYADDR, &ioctl_var) != 0) {
+                    printf("ERROR: BCIOGET_BUFFERADDR failed\n");
+                    goto err_ret;
                 }
-                 ti_srv_process_post(inpersmatPtr,&flagGASuccess);
 
+                buf_paddr[idx] = ioctl_var.output;
+                buf_vaddr[idx] = (char *)mmap(NULL, buf_size,
+                                  PROT_READ | PROT_WRITE, MAP_SHARED,
+                                  bcfd, buf_paddr[idx]);
+
+                if (buf_vaddr[idx] == MAP_FAILED) {
+                    printf("ERROR: mmap failed\n");
+                    goto err_ret;
+                }
+            }
+        }
+
+        ret = 0;
+        idx = 0;
+
+        if (profiling == TRUE) {
+            gettimeofday(&tvp, NULL);
+            tv0 = tvp;
+        }
+
+        while (!gQuit) 
+        {
+
+#ifdef USE_SOLID_PATTERN
+            usleep(1000 * 1000);
+#endif
+            
+            frame = frame_get(&buf_pa);
+
+            if (frame == (char *) -1)
+                break;
+
+            if (frame) {
+                if (buf_param.type == BC_MEMORY_MMAP) {
+                    for (ii = 0; ii < min_h; ii++)
+                          /*FIXME calc stride instead of 2*/
+                        memcpy(buf_vaddr[idx] + buf_info.w * 2 * ii + cp_offset,
+                               frame + frame_w * 2 * ii, min_w * 2);
+                }
+                else    /*buf_param.type == BC_MEMORY_USERPTR*/
+                    idx = buf_pa.index;
             }
 
-            /* save perspective matrix parameter to flash if GA succeed*/
-            if(flagGASuccess == 1) {
+            drawCube(idx);
 
-            	/*print out GA result if necessary */
-            	int get_value[4];
-            	ti_srv_control_dynnamic(GA_G_GETMATCHES, 0, get_value);
+            idx = (idx + 1) % buf_info.n;
 
-            	FS.magicNumber = 0x123456;
-            	FS.updateFlag = 1;
-            	memcpy(FS.inpersmatPtr , inpersmatPtr , 36 * 4);
-            	spiFlashWrite(SRV_PARAM_START_ADDR,sizeof(FlashStruct)/* 4+4+3*3*9*4*/, &FS);
+            if (profiling == FALSE)
+                continue;
+
+            gettimeofday(&tv, NULL);
+
+            fcount++;
+
+            if (!(fcount % 60)) {
+                tdiff = (unsigned long)(tv.tv_sec*1000 + tv.tv_usec/1000 -
+                                    tvp.tv_sec*1000 - tvp.tv_usec/1000);
+                if (tdiff < 1800)   /*print fps every 2 sec*/
+                    continue;
+
+                fprintf(stderr, "\rAvg FPS: %ld",
+                        fcount / (tv.tv_sec - tv0.tv_sec));
+                tvp = tv;
             }
 
-            if(eraseFlash)
-            {
-            	spiFlashErase(SRV_PARAM_START_ADDR, sizeof(FlashStruct));
-				eraseFlash = 0;
-            }
+        }
 
-            DoneProcessedOneSet = 1;
-            //Hwi_restore(hwiKey);//liuxu, 06/06/2014, this disable hwi too long to impact the timer/clock_ticks and so on.
-        } else  {
-            Task_sleep(1);//liuxu, 02/11/2014, 1ms.
+        printf("\n");
+
+err_ret:
+        if (buf_param.type == BC_MEMORY_MMAP) {
+            for (idx = 0; idx < buf_info.n; idx++) {
+                if (buf_vaddr[idx] != MAP_FAILED)
+                    munmap(buf_vaddr[idx], buf_size);
+            }
+        }
+        if (bcfd > -1)
+            close(bcfd);
+
+        deInitEGL(buf_info.n);
+        frame_cleanup();
+
+        printf("done\n");
+        return ret;
+
+
+       
+
+leave: 
+    printf("<-- Main_main leave:\n");//liuxu, 8/19/2013.
+    
+    status = (status >= 0 ? 0 : status);
+    return (status);
+}
+#endif
+
+/*
+ *  ======== Main_parseArgs ========
+ */
+Int Main_parseArgs(Int argc, Char *argv[])
+{
+    Int             x, cp, opt, argNum;
+    UInt16          i, numProcs;
+    String          name;
+    Int             status = 0;
+
+
+    /* parse the command line options */
+    for (opt = 1; (opt < argc) && (argv[opt][0] == '-'); opt++) {
+        for (x = 0, cp = 1; argv[opt][cp] != '\0'; cp++) {
+            x = (x << 8) | (int)argv[opt][cp];
+        }
+
+        switch (x) {
+            case 'h': /* -h */
+                printf("%s", Main_USAGE);
+                exit(0);
+                break;
+
+            case 'l': /* -l */
+                printf("Processor List\n");
+                SysLink_setup();
+                numProcs = MultiProc_getNumProcessors();
+                for (i = 0; i < numProcs; i++) {
+                    name = MultiProc_getName(i);
+                    printf("    procId=%d, procName=%s\n", i, name);
+                }
+                SysLink_destroy();
+                exit(0);
+                break;
+
+            default:
+                printf(
+                    "Error: %s, line %d: invalid option, %c\n",
+                    __FILE__, __LINE__, (Char)x);
+                printf("%s", Main_USAGE);
+                status = -1;
+                goto leave;
         }
     }
 
-	//Close the test platform
-	//CloseTP(&tpHandle);//liuxu, 01/22/2014, China port.
+    /* parse the command line arguments */
+    for (argNum = 1; opt < argc; argNum++, opt++) {
+
+        switch (argNum) {
+            case 1: /* name of proc #1 */
+                Main_remoteProcName = argv[opt];
+                break;
+
+            default:
+                printf(
+                    "Error: %s, line %d: too many arguments\n",
+                    __FILE__, __LINE__);
+                printf("%s", Main_USAGE);
+                status = -1;
+                goto leave;
+        }
+    }
+
+    /* validate command line arguments */
+    if (Main_remoteProcName == NULL) {
+        printf(
+            "Error: %s, line %d: missing argument: proc\n",
+            __FILE__, __LINE__);
+        printf("%s", Main_USAGE);
+        status = -1;
+        goto leave;
+    }
+
+leave:
+    return(status);
+}
+
+#ifdef NEW_MAIN
+/***************************************************************************************************************
+ * DSP主程序
+ **************************************************************************************************************/
+Int Main_main(Void)
+{
+    UInt16      remoteProcId;
+    Int         status = 0;
+    Int         printremoteProcId = 0xff;
+
+    MessageQ_Msg pTempCmdMsg = NULL;//liuxu, 8/20/2013.
+    UInt16 nSRId = 0u;
+    SharedRegion_SRPtr srPtr = {0u};
+    cfg8Pointers_t *pFrom_DSP_TempCmdMsg = NULL;
+
+    unsigned char *vitrualY;
+    unsigned char *vitrualUV;
+
+    unsigned char *vitrualY1;//liuxu, 10/5/2013.
+    unsigned char *vitrualY2;
+    unsigned char *vitrualY3;
+
+    unsigned char *vitrualUV1;
+    unsigned char *vitrualUV2;
+    unsigned char *vitrualUV3;
+
+    int time1_profile, time2_profile, time3_profile, time4_profile, time5_profile, time6_profile,
+    time7_profile, time8_profile, time9_profile;//liuxu, 10/12/2013.
+
+    printf("\n******************************");
+    printf("\n******** Main_main **********");
+    printf("\n******************************");
+
+#if 0 ///- GZD
+#ifdef SAVE_PERSMAT_TO_FS
+#endif
+#endif
+
+    printf("\nstep [1]: creating IPC");
+
+    remoteProcId = MultiProc_getId("DSP");
+
+    /* attach to the remote processor */
+    printremoteProcId = MultiProc_getId("HOST");
+
+    Osal_printf("\nliuxu, remoteProcId=%d, host-printremoteProcId=0x%x\n", remoteProcId, printremoteProcId);
+
+    void *ipc_vector = (0x85c00400);//liuxu, 07/01/2014, this is the address of ipc header.
+
+    #if 1
+    status = Ipc_control(remoteProcId, Ipc_CONTROLCMD_LOADCALLBACK, &ipc_vector);//liuxu, 07/01/2014, support late attach.
+    #else
+    status = Ipc_control(remoteProcId, Ipc_CONTROLCMD_LOADCALLBACK, NULL);
+    #endif
+
+    if (status < 0) {
+        printf("Main_main: load callback failed, remoteProcId=%d\n", remoteProcId);
+        goto leave;
+    }
+
+    /* invoke the SysLink start callback */
+    status = Ipc_control(remoteProcId, Ipc_CONTROLCMD_STARTCALLBACK, NULL);
+    if (status < 0) {
+        printf("Main_main: start callback failed\n");
+        goto leave;
+    }
+
+    /* BEGIN application phase */
+    printf("\nstep [2]: creating app");
+
+    do
+    {
+		/* Open the heap created by the other processor. Loop until opened. */
+		do
+		{
+			status = HeapBufMP_open(MSGQ_HEAP_NAME, &hHeap);
+			/*
+			 *  Sleep for 1 clock tick to avoid inundating remote processor
+			 *  with interrupts if open failed
+			 */
+			if (status < 0)
+			{
+				sleep(1);//liuxu, 8/20/2013, sleep of linux.
+			}
+		} while (status < 0);
+
+		/* Register this heap with MessageQ */
+		MessageQ_registerHeap((IHeap_Handle) hHeap, MSGQ_HEAPID);
+
+    } while(0);
+
+    hMessageQ = MessageQ_create((String) "A8_CMD_Q_TO_DSP_LITE", NULL);
+    cmdMsg = (cfg4Pointers_t *)MessageQ_alloc(MSGQ_HEAPID, ROUNDUP_SIZE(sizeof(cfg4Pointers_t), 128));//liuxuliuxu, don't forget to free at the end.
+
+    do
+    {
+        status = MessageQ_open("DSP_CMD_Q_TO_A8", &RemoteDspQId);
+    }while(status != 0);
+
+#if 0 ///- gzd
+	//以下代码保存摄像头图片
+ #endif
+
+#ifdef MPEG4_ENCODER
+	//视频编码和存储
+#endif
+
+    //printf("\nliuxu, start, timestamp=%d!!!!\n", IviGetTime());//liuxuliuxu.
+#ifdef GFX_CUBE
+        int bcfd = -1;
+        char bcdev_name[] = "/dev/bccatX";
+        BCIO_package ioctl_var;
+        bc_buf_params_t buf_param;
+        bc_buf_ptr_t buf_pa;
+
+        unsigned long buf_paddr[MAX_BUFFERS];
+        char *buf_vaddr[MAX_BUFFERS] = { MAP_FAILED };
+        char *frame = NULL;
+
+        char *frameUV = NULL;
+
+        int buf_size = 0;
+        int c, idx, ret = -1;
+        char opts[] = "pw:t:b:h";
+
+        int   ii;
+        int   frame_w, frame_h;
+        int   min_w = 0, min_h = 0;;
+        int   cp_offset = 0;
+
+        struct timeval tvp, tv, tv0 = {0,0};
+        unsigned long tdiff = 0;
+        unsigned long fcount = 0;
+
+        if (frame_init(&buf_param))
+            return -1;
+
+        bcdev_name[strlen(bcdev_name)-1] = '0' + bcdev_id;
+
+        if ((bcfd = open(bcdev_name, O_RDWR|O_NDELAY)) == -1) {
+            printf("ERROR: open %s failed\n", bcdev_name);
+            goto err_ret;
+        }
+
+        frame_w = buf_param.width;
+        frame_h = buf_param.height;
+
+        if (min_w > 0 && !(min_w % 8))
+            buf_param.width = min_w;
+
+        if (min_h > 0)
+            buf_param.height = min_h;
+
+printf("\n-->liuxu, 06/19/2014, frame_w=%d, frame_h=%d, min_w=%d, min_h=%d", frame_w, frame_h, min_w, min_h);
+
+        int check = 0;
+
+#ifndef NO_MEMCPY
+        if ((check = ioctl(bcfd, BCIOREQ_BUFFERS, &buf_param)) != 0) {
+            printf("ERROR: BCIOREQ_BUFFERS failed, check=%d\n", check);
+            goto err_ret;
+        }
+
+        if (ioctl(bcfd, BCIOGET_BUFFERCOUNT, &ioctl_var) != 0) {
+            goto err_ret;
+        }
+
+
+        if (ioctl_var.output == 0) {
+            printf("ERROR: no texture buffer available\n");
+            goto err_ret;
+        }
+#else
+        if ((check = ioctl(bcfd, BCIOREQ_BUFFERS, &buf_param)) != 0) {
+            printf("ERROR: BCIOREQ_BUFFERS failed, check=%d\n", check);
+            goto err_ret;
+        }
+
+        bc_buf_ptr_t buf_pa_init;
+
+/*liuxu, 10/18/2013, channel 0*/
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_0;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 0;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_1;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 1;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_4;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 4;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_5;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 5;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+/*liuxu, 10/18/2013, channel 1*/
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_0+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 0+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_1+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 1+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_2+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 2+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_3+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 3+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_4+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 4+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_5+FRAME_SIZE;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 5+InterChannelIndexOffset;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+/*liuxu, 10/18/2013, channel 2*/
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_0+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 0+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_1+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 1+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_2+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 2+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_3+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 3+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_4+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 4+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_5+FRAME_SIZE*2;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 5+InterChannelIndexOffset*2;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+/*liuxu, 10/18/2013, channel 3*/
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_0+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 0+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_1+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 1+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_2+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 2+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_3+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 3+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_4+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 4+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        buf_pa_init.pa = M3_FRAMEBUFFER_PA_5+FRAME_SIZE*3;//liuxu, 10/12/2013, this is the false one just for init.
+        buf_pa_init.index = 5+InterChannelIndexOffset*3;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+
+        #ifdef TI_DSP_PROCESSING
+        buf_pa_init.pa = 0x8ff00000;//liuxu, 02/12/2014, add one/idx24 for outputbuf of ti dsp processing, hard coding.
+        buf_pa_init.index = 24;
+        if (ioctl(bcfd, BCIOSET_BUFFERPHYADDR, &buf_pa_init) != 0)
+        {
+            printf("\nliuxu, ERROR: BCIOSET_BUFFERPHYADDR error, %d, 0x%lx\n", buf_pa_init.index, buf_pa_init.pa);
+            return -1;
+        }
+        #endif
+
+#endif //NO_MEMCPY
+
+        if (initEGL(ioctl_var.output)) {
+            printf("ERROR: init EGL failed\n");
+            goto err_ret;
+        }
+
+        if ((ret = initTexExt(bcdev_id, &buf_info)) < 0) {
+            printf("ERROR: initTexExt() failed [%d]\n", ret);
+            goto err_ret;
+        }
+
+        if (buf_info.n > MAX_BUFFERS) {
+            printf("ERROR: number of texture buffer exceeds the limit\n");
+            goto err_ret;
+        }
+
+printf("\n--> liuxu buf number 10/12/2013, buf_info.n=%d\n", buf_info.n);
+
+        /*FIXME calc stride instead of 2*/
+        buf_size = buf_info.w * buf_info.h * 1.5;//liuxu, 9/7/2013. ?????
+        min_w    = buf_info.w < frame_w ? buf_info.w : frame_w;
+        min_h    = buf_info.h < frame_h ? buf_info.h : frame_h;
+
+        if (buf_info.h > frame_h)
+            cp_offset = (buf_info.h - frame_h) * buf_info.w;
+
+        if (buf_info.w > frame_w)
+            cp_offset += buf_info.w - frame_w;
+
+printf("\n\n\n--> liuxu checkpoint, cp_offset=%d 10/12/2013\n\n\n", cp_offset);
+
+
+        if (buf_param.type == BC_MEMORY_USERPTR) {
+            ;//liuxu, 10/10/2013, space holder.
+        }
+        else if (buf_param.type == BC_MEMORY_MMAP) {
+            for (idx = 0; idx < buf_info.n; idx++) {
+                ioctl_var.input = idx;
+
+                if (ioctl(bcfd, BCIOGET_BUFFERPHYADDR, &ioctl_var) != 0) {
+                    printf("ERROR: BCIOGET_BUFFERADDR failed\n");
+                    goto err_ret;
+                }
+
+
+                buf_paddr[idx] = ioctl_var.output;
+                buf_vaddr[idx] = (char *)mmap(NULL, buf_size,
+                                  PROT_READ | PROT_WRITE, MAP_SHARED,
+                                  bcfd, buf_paddr[idx]);
+
+                if (buf_vaddr[idx] == MAP_FAILED) {
+                    printf("ERROR: mmap failed\n");
+                    goto err_ret;
+                }
+
+            }
+        }
+
+        ret = 0;
+        idx = 0;
+#endif ///#ifdef GFX_CUBE
+
+#ifndef CARIT_KEY  ///串口通信消息处理
+    printf("[gzd]  Creating comm thread, UART2 ...");
+	ret = COMM_CreateTask();
+	if(ret < 0) {
+		printf("\n\n gzd, ERROR! Create UART comm task failed. \n");
+	}
+	else {
+		printf("\n\n gzd, OK to Create UART comm task. \n");
+	}
+#endif
+
+	///启动界面显示
+	cmdMsg->cmdType = (0x666 << 16 ) | MSG_FRONT;//liuxu, 06/19/2014, pass info to DSP then M3 through DSP.//liuxu, 8/20/2013, ACK only.
+	status = commandQPut(RemoteDspQId, (MessageQ_Msg )cmdMsg);
+	if (status < 0)
+		printf("\n gzd, ERR to send msg to DSP, status=0x%x\n", status);
+	else
+		printf("\ngzd, OK to send a new msg to DSP, cmd = %d", MSG_FRONT);
+
+#ifdef CARIT_KEY
+        ///使用中通福瑞按键
+	printf("\nstep [3]: creating CARIT KEY detecting thread ...... ");
+	sleep(1);
+        ret = CreateCaritKeyboardProcThread();
+        if(ret < 0)
+    		printf("FAILED, ret = %d ", ret);
+        else
+    		printf("OK");
+#endif
+
+/*
+ * 以下部分进入主循环，从消息队列提取按键消息并处理，包括画面切换显示、各通道抓取图片、校正和保存参数
+ */
+    int i_put = 0;
+    int i_get = 0;
+
+    do
+    {
+        time1_profile = IviGetTime();
+
+        //printf("\nliuxu, before commandQGet");
+
+        ///从消息队列提取消息
+        status = commandQGet(hMessageQ, &(pTempCmdMsg), (UInt32)MessageQ_FOREVER);
+
+#if 0
+///以下部分保存校正参数
+#ifdef SAVE_PERSMAT_TO_FS  ///+，gzd， 保存校正参数到SD卡
+#endif ///SAVE_PERSMAT_TO_FS
+#endif
+
+        //printf("\nliuxu, after commandQGet");
+
+        if (status < 0)
+        {
+            printf("\nliuxu, commandQGet error, status=0x%x\n", status);//liuxuliuxu.
+            while(1);
+        }
+
+        time5_profile = IviGetTime() - time1_profile;
+        //printf("\nliuxu, input IPC get per frame = %d ms!!", time5_profile);
+
+        time8_profile = IviGetTime();
+
+///从消息字段中提取共享存储区
+        /* Get the id of the address if id is not already known. */
+        nSRId = SharedRegion_getId(pTempCmdMsg);
+        /* Get the shared region pointer for the address */
+        srPtr = SharedRegion_getSRPtr(pTempCmdMsg, nSRId);
+        /* Get the address back from the shared region pointer */
+        pFrom_DSP_TempCmdMsg = SharedRegion_getPtr(srPtr);
+
+        while(pFrom_DSP_TempCmdMsg->cmdType != 0x777)
+        {
+            printf("\nliuxu, pFrom_DSP_TempCmdMsg->cmdType != 0x777\n");
+        }
+
+        i_get++;
+
+        time9_profile = IviGetTime() - time8_profile;
+        //printf("\nliuxu, share region parser for ipc per frame = %d ms, iget=%d!!", time9_profile, i_get);
+
+        //k++;
+        //printf("\nliuxu, k=%d, pointerY=0x%x, pointerUV=0x%x\n", k, pFrom_DSP_TempCmdMsg->pPointer0, pFrom_DSP_TempCmdMsg->pPointer1);
+
+
+#ifdef GFX_CUBE
+        //frame = frame_get(&buf_pa);
+
+#ifndef NO_MEMCPY
+        ProcMgr_Handle               handle = NULL;
+
+    	status = ProcMgr_open (&handle, 0);
+
+    	//printf("\nliuxu, ProcMgr_open successful, handle=0x%x\n", handle);//liuxuliuxu.
+
+
+    	if (status < 0)
+        {
+            printf("\nliuxu, ProcMgr_open error, status=0x%x\n", status);//liuxuliuxu.
+            while(1);
+        }
+
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualY,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer0,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer0,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        ProcMgr_translateAddr (handle,
+                       &vitrualY1,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer1,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV1,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer1,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        ProcMgr_translateAddr (handle,
+                       &vitrualY2,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer2,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV2,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer2,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        ProcMgr_translateAddr (handle,
+                       &vitrualY3,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pY_Pointer3,
+                       ProcMgr_AddrType_SlaveVirt);
+
+    	ProcMgr_translateAddr (handle,
+                       &vitrualUV3,
+                       ProcMgr_AddrType_MasterUsrVirt,
+                       pFrom_DSP_TempCmdMsg->pUV_Pointer3,
+                       ProcMgr_AddrType_SlaveVirt);
+
+        frame = vitrualY3;//liuxu, 10/5/2013, either 0,1,2,3 can be used here or you can use them together in your app!!!!!!!!
+        frameUV = vitrualUV3;
+#else
+
+        if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_0)
+            idx = 0;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_1)
+            idx = 1;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_2)
+            idx = 2;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_3)
+            idx = 3;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_4)
+            idx = 4;
+        else if(pFrom_DSP_TempCmdMsg->pY_Pointer0 == M3_FRAMEBUFFER_PA_5)
+            idx = 5;
+        else
+            idx = 0;;//liuxu, 06/19/2014, here is a RISK...//liuxu, 06/05/2014, test for PAL cam..//printf("\n\nliuxu, error!!!!\n\n");
+
+#endif ///GFX_CUBE
+
+#ifndef NO_MEMCPY
+        time3_profile = IviGetTime();
+
+        if (frame == (char *) -1)
+            break;
+
+        if (frame) {
+            if (buf_param.type == BC_MEMORY_MMAP) {
+                for (ii = 0; ii < min_h; ii++)
+                      /*FIXME calc stride instead of 2*/
+                    memcpy(buf_vaddr[idx] + buf_info.w * ii + cp_offset,
+                           frame + 736 * ii, min_w);//liuxu, 9/7/2013.
+
+                for (ii = 0; ii < min_h/2; ii++)
+                    memcpy(buf_info.w * buf_info.h + buf_vaddr[idx] + buf_info.w * ii + cp_offset,
+                           frameUV + 736 * ii, min_w);//liuxu, 9/7/2013, for UV of NV12.
+
+            }
+            else    /*buf_param.type == BC_MEMORY_USERPTR*/
+                idx = buf_pa.index;
+        }
+
+        time4_profile = IviGetTime() - time3_profile;
+        printf("\nliuxu, memory copy time per frame = %d ms!!", time4_profile);
+#else
+        if (buf_param.type == BC_MEMORY_USERPTR)
+        {
+            //printf("\nliuxu, 10/10/2013, good, idx=%d!!!\n", idx);
+        }
+
+///响应按键消息，切换显示画面
+      	//printf("\nliuxu, after drawCube, ch=%d, pressing=%d, released=%d", ch, pressing, released);
+#endif
+
+        time3_profile = IviGetTime();
+
+ #ifdef TI_DSP_PROCESSING
+
+        if(idx == 24)
+            drawCube(24, 24);//liuxu, 02/12/2014//liuxu, 06/02/2014, add 2nd parameter for side view.
+        else
+            drawCube(24, idx+channelNo*InterChannelIndexOffset);//liuxu, 02/12/2014//liuxu, 06/02/2014, add 2nd parameter for side view.
+
+ #else
+///- gzd 20150515        drawCube(idx+channelNo*InterChannelIndexOffset, 0);//liuxu, 06/19/2014, snd para is useless when disabled "DIRECT_SHOW" and "SIDE_VIEW"
+ #endif
+        time4_profile = IviGetTime() - time3_profile;
+       // printf("\nliuxu, drawCube time per frame = %d ms!!", time4_profile);
+
+#ifndef NO_MEMCPY
+        idx = (idx + 1) % buf_info.n;
+#endif
+
+#endif
+
+
+        i_put++;
+
+        time7_profile = IviGetTime() - time6_profile;
+        //printf("\nliuxu, output IPC put per frame = %d ms, iput=%d!!", time7_profile, i_put);
+        time2_profile = IviGetTime() - time1_profile;
+        //liuxu, 06/16/2014, printf("\nliuxu, total time per frame = %d ms!!\n\n\n", time2_profile);
+
+        usleep(20000);//liuxu, 12/23/2013, usleep 20ms to yield to mpeg4 encoder thread.
+    }while(1);
+
+leave:
+    printf("<-- Main_main leave:\n");//liuxu, 8/19/2013.
+
+#ifdef MPEG4_ENCODER
+     pthread_join (thread_id, NULL);//liuxu, 12/19/2013.
+#endif
+
+    status = (status >= 0 ? 0 : status);
+    return (status);
+
+#ifdef GFX_CUBE
+err_ret:
+        if (buf_param.type == BC_MEMORY_MMAP) {
+            for (idx = 0; idx < buf_info.n; idx++) {
+                if (buf_vaddr[idx] != MAP_FAILED)
+                    munmap(buf_vaddr[idx], buf_size);
+            }
+        }
+        if (bcfd > -1)
+            close(bcfd);
+
+        deInitEGL(buf_info.n);
+        frame_cleanup();
+
+//        close(fd_gpio);
+
+        printf("liuxu, CUBE done\n");
+        return ret;
+#endif
+
+}
+
+#ifdef CARIT_KEY
+/**
+ * 创建开发板按键处理线程
+ *
+ * @return
+ */
+int CreateCaritKeyboardProcThread(void)
+{
+	int err = 0;
+
+	printf("\n creating CARIT Keyboard detecting thread ...");
+//	sleep(1);
+
+	///创建线程
+    err = pthread_create (&keyProc_threadid, NULL, CaritBoardKeyProc, NULL);
+    if (err != 0)
+    {
+        printf("\n\n FAILED to create thread: %s\n", strerror(err));
+//    	sleep(1);
+      return -1;
+    }
+
+    printf("\n\n OK to create thread, thread_id = %d\n", keyProc_threadid);
+//	sleep(1);
+
+    return 0;
+}
+
+/**
+ * 中通福瑞开发板按键消息处理，继承原来的处理方式，不同的是为期单独创建一个线程
+ */
+void CaritBoardKeyProc(void)
+{
+	static int fd_gpio = -1;
+	static char ch;
+	static int pressing, released;
+	static int channelNo = 0;
+	static int long_press_counter = 0;
+	static int long_pressed_trigger = 0;
+
+	static int ChInfoToDSP = 0;
+
+
+// + a0220402, add support carit board key
+#ifdef CONFIG_CARIT
+	if(fd_gpio < 0) {
+		fd_gpio = open("/sys/class/gpio/gpio4/value", O_RDONLY | O_NONBLOCK );
+	}
+#else
+	fd_gpio = open("/sys/class/gpio/gpio39/value", O_RDONLY | O_NONBLOCK );//liuxu, 10/18/2013, for detecting sw9 of J5eco EVM.
+#endif
+// - a0220402,
+	if (fd_gpio < 0) {
+		printf("\n *** ERR ***, open dev failed. \n");
+		return -1;
+	}
+
+	printf("\n OK to open GPIO device, fd_gpio=%d\n\n\n", fd_gpio);
+
+	while(1)
+	{
+		lseek(fd_gpio, 0, SEEK_SET);
+		read(fd_gpio, &ch, 1);
+
+	///响应按键消息，切换显示画面
+		if (ch == '0')  ///按键状态：触发
+		{
+			pressing = 1;
+			long_press_counter++;
+			long_pressed_trigger = 0;
+		}
+		else if (pressing == 1) ///按键状态：按下
+		{
+			 released = 1;
+			 if(long_press_counter > 10*5)//liuxu, 06/03/2014, 5s for long press.  检测长按
+			 {
+				long_press_counter = 0;
+				long_pressed_trigger = 1;
+			 }
+			 printf("\n---------- KEY released! --------------");
+		}
+		else ///按键状态：释放
+		{
+			pressing = 0;
+			released = 0;
+			long_press_counter = 0;
+			long_pressed_trigger = 0;
+		}
+
+		//printf("\nliuxu, 6/3/2014, ch=%c, pressing=%d, released=%d!!!\n", ch, pressing, released);
+		if(long_pressed_trigger == 1) //长按，存储拼接校正参数
+		{
+			pressing = 0;
+			released = 0;
+			long_press_counter = 0;
+			long_pressed_trigger = 0;
+			int ret = 0;
+
+			///读取DSP_Persmat.dat，内存映射到DSP
+			printf("\nliuxu, 06/03/2014, long pressed triggered\n");
+			printf("\n Detected a long press, start COLABRATING ...");
+
+			ret = TakeCalibrating();
+			if(ret < 0)
+				printf("\n :( Colabring failed! ret = %d", ret);
+			else
+				printf("\n :) Colabrated OK! ");
+		}
+		else if((pressing == 1) && (released == 1))//liuxu, 10/18/2013, bug to improve, when rapidly press and release, the behavior may depends by chance.
+		{
+			printf("\n\nliuxu, 10/18/2013, a normal key detected!!!\n\n");
+			pressing = 0;
+			released = 0;
+
+			channelNo++;
+			channelNo = channelNo%4; ///循环计数通道，总共四路摄像头
+
+			ChInfoToDSP++;
+			ChInfoToDSP = ChInfoToDSP % 8;///+ gzd,20150515 根据显示效果，取消立方体显示
+
+			printf("\n\n >>> channelNo = %d, ChInfoToDSP = %d\n",channelNo, ChInfoToDSP);
+
+			if(ChInfoToDSP == 5)
+			{
+	//    	        system("echo 1,0/0/0/0 > /sys/devices/platform/vpss/display2/order");//liuxu, 06/20/2014, grx0 up.
+			}
+			else if (ChInfoToDSP == 6)
+			{
+				///gzd 取消立方体显示
+				///- gzd system("echo 1,3/0/0/0 > /sys/devices/platform/vpss/display2/order");//liuxu, 06/20/2014, video up.
+			}
+
+			///???以下函数作用不清楚
+			//liuxu, 02/19/2014, add key pad function.
+			if(channelNo == 1)
+			{
+				//system("echo 1,3/0/0/0 > /sys/devices/platform/vpss/display2/order");//liuxu, 06/03/2014, video pipeline on the top.
+				//system("echo 0 > /sys/devices/platform/vpss/graphics0/enabled");
+				//liuxu, 06/03/2014, no grx2 now. system("echo 0 > /sys/devices/platform/vpss/graphics2/enabled");
+			}
+			else if (channelNo == 2)
+			{
+				//system("echo 1,0/0/0/0 > /sys/devices/platform/vpss/display2/order");//liuxu, 06/03/2014, grx0 pipeline on the top.
+				//system("echo 1 > /sys/devices/platform/vpss/graphics0/enabled");
+			}
+			else if (channelNo == 3)
+			{
+				//system("echo 1 > /sys/devices/platform/vpss/graphics2/enabled");
+			}
+
+	//      将按键消息通过Queue传给DSP，ChInfoToDSP是按键消息
+			cmdMsg->cmdType = (0x666 << 16 ) | ChInfoToDSP;//liuxu, 06/19/2014, pass info to DSP then M3 through DSP.//liuxu, 8/20/2013, ACK only.
+
+			int status = commandQPut(RemoteDspQId, (MessageQ_Msg )cmdMsg);
+			if (status < 0)
+				printf("\n gzd, ERR to send msg to DSP, status=0x%x\n", status);
+			else
+				printf("\ngzd, OK to send a new msg to DSP, cmd = %d", ChInfoToDSP);
+
+		}
+
+		usleep(100000); ///延迟10ms
+	}///end while(1)
+
+	close(fd_gpio);
+	fd_gpio = -1;
+
+}
+#endif //CARIT_KEY
+
+/********************************************************************************************************
+ * 核心板A8主控程序与底板MCU之间的通信串口程序
+ *******************************************************************************************************/
+#ifdef A8_MCU_COMM_UART
+
+static pthread_t thread_id;
+
+
+//#ifndef UInt8
+//typedef unsigned char UInt8
+//#endif
+
+#define  CMD_HEAD	0x55	/*控制命令，MCU->A8*/
+#define  ACK_HEAD	0xAA	/*应答命令，A8->MCU*/
+
+/*命令执行结果*/
+//typedef enum {
+//	RET_OK = 1,  	/*成功*/
+//	RET_FAIL = -1, 	/*失败*/
+//	RET_TOUT = 0, 		/*超时*/
+//} eRET;
+
+/*控制命令数据格式*/
+typedef struct _tMSG_CMD {
+	UInt8 head;		/*消息头，0x55*/
+	UInt8 cmd;			/*命令类型*/
+	UInt8 param[4];	/*命令参数*/
+	UInt8 checksum;	/*校验和*/
+} tMSG_CMD;
+
+/*应答命令数据格式*/
+typedef struct _tMSG_ACK {
+	UInt8 head;		/*消息头，0xAA*/
+	UInt8 cmd;			/*命令类型*/
+	UInt8 ret;			/*命令执行结果*/
+	UInt8 checksum;	/*校验和*/
+} tMSG_ACK;
+
+
+#define BUF_SIZE	100
+
+///循环数组
+typedef struct  _tRINGBUF {
+	UInt8 buf[BUF_SIZE];	///数组缓区
+	UInt8 read;			///读位置
+	UInt8 write;			///写位置
+
+} tRINGBUF;
+
+static tRINGBUF	tRBuf;
+static int serial_fd = 0;
+
+static void COMM_Proc(void);
+static int UART_Init(void);
+static int UART_Send(int fd, UInt8 *data, int datalen);
+static int UART_Recv(int fd, UInt8 *data, int datalen);
+static void attach2Tail(UInt8 *buf, UInt8 len, tRINGBUF *ptRBuf);
+static UInt8 CalChecksum(UInt8 *data, UInt8 u8Len);
+static int COMM_TakeFrame(tRINGBUF *ptRBuf, tMSG_CMD *ptCmd);
+static void COMM_Proc(void);
+
+/**
+ * 打开串口并初始化设置
+ */
+int UART_Init(void)
+{
+	int ret = 0;
+	struct termios  old_termios;
+    struct termios  new_termios;
+
+#if 1
+	serial_fd = open("/dev/ttyO1",O_RDWR|O_NONBLOCK);
+	if(serial_fd < 0){
+		perror("\n serial open fail\n");
+		return -errno;
+	}
+
+	tcgetattr(serial_fd, &old_termios);
+	new_termios = old_termios;
+	new_termios.c_lflag &= ~(ICANON | ECHO | ISIG);
+	new_termios.c_cflag |= (CREAD | CLOCAL);
+	new_termios.c_cflag &= ~(CSTOPB | PARENB | CRTSCTS);
+	new_termios.c_cflag &= ~(CBAUD | CSIZE) ;
+	new_termios.c_cflag |= (B115200 | CS8);
+	ret = tcsetattr(serial_fd, TCSANOW, &new_termios);
+	if(ret < 0) {
+		printf("\ngzd, UART_Init tcsetattr failed! errno = %d\n", errno);
+		return ret;
+	}
+#endif
+#if 0
+
+
+    //串口主要设置结构体termios <termios.h>
+    struct termios options;
+
+    serial_fd = open(DEVICE, O_RDWR | O_NOCTTY | O_NDELAY);
+    if (serial_fd < 0) {
+        perror("open");
+        return -1;
+    }
+
+    /**1. tcgetattr函数用于获取与终端相关的参数。
+    *参数fd为终端的文件描述符，返回的结果保存在termios结构体中
+    */
+    tcgetattr(serial_fd, &options);
+    /**2. 修改所获得的参数*/
+    options.c_cflag |= (CLOCAL | CREAD);//设置控制模式状态，本地连接，接收使能
+    options.c_cflag &= ~CSIZE;//字符长度，设置数据位之前一定要屏掉这个位
+    options.c_cflag &= ~CRTSCTS;//无硬件流控
+    options.c_cflag |= CS8;//8位数据长度
+    options.c_cflag &= ~CSTOPB;//1位停止位
+    options.c_cflag &= ~PARENB; //无奇偶检验位
+    options.c_iflag &= ~IGNPAR;//无奇偶检验位
+
+    //options.c_iflag |= ~IGNPAR;//无奇偶检验位
+    /*使用原始模式(Raw Mode)方式来通讯*/
+    options.c_lflag  &= ~(ICANON | ECHO | ECHOE | ISIG);  /*Input*/
+    options.c_oflag  &= ~OPOST;   /*Output*/
+    /*无软件流控*/
+    options.c_iflag &= ~(IXON | IXOFF | IXANY);
+
+    ret = cfsetispeed(&options, B115200);
+    if(ret < 0) {
+    	printf("\ngzd, UART_Init cfsetispeed failed!\n");
+    	return ret;
+    }
+    ret = cfsetospeed(&options, B115200);//设置波特率
+    if(ret < 0) {
+    	printf("\ngzd, UART_Init cfsetospeed failed!\n");
+    	return ret;
+    }
+
+    /**3. 设置新属性，TCSANOW：所有改变立即生效*/
+    ret = tcflush(serial_fd, TCIFLUSH);//溢出数据可以接收，但不读
+    if(ret < 0) {
+    	printf("\ngzd, UART_Init tcflush failed! errno = %d\n", errno);
+    	return ret;
+    }
+
+    ret = tcsetattr(serial_fd, TCSANOW, &options);
+    if(ret < 0) {
+    	printf("\ngzd, UART_Init tcsetattr failed! errno = %d\n", errno);
+    	return ret;
+    }
+#endif
+
+    return 0;
+}
+
+/**
+ * 串口发送数据
+ *
+ * @param fd		串口文件描述符
+ * @param data		待发送数据
+ * @param datalen	数据长度
+ * @return 0=成功，-1=失败
+ */
+int UART_Send(int fd, UInt8 *data, int datalen)
+{
+    int len = 0;
+
+	printf("\ngzd, UART_Send, <%x %x %x %x %x>... \n", data[0], data[1], data[2], data[3], data[4]);
+
+    len = write(fd, data, datalen);
+    if(len == datalen) {
+        return 0;
+    }
+    else {
+    	tcflush(fd, TCOFLUSH);
+    	return -1;
+    }
+}
+
+/**
+ * 串口接收数据
+ *
+ * @param fd			串口文件描述符
+ * @param data			接收数据缓区
+ * @param datalen		接收数据长度
+ * @return  返回实际长度，-1：错误
+ */
+int UART_Recv(int fd, UInt8 *data, int datalen)
+{
+    int len=0, ret = 0;
+    fd_set fs_read;
+    struct timeval tv_timeout;
+#if 0
+    FD_ZERO(&fs_read);
+    FD_SET(fd, &fs_read);
+    tv_timeout.tv_sec  = (10*20/115200+2);
+    tv_timeout.tv_usec = 0;
+
+    ret = select(fd+1, &fs_read, NULL, NULL, &tv_timeout);
+    if(ret < 0) {
+        printf("gzd, UART_Recv(), select failed!");
+      	return ret;
+    }
+
+    if (!FD_ISSET(fd, &fs_read)) {
+        perror("select");
+        printf("gzd, UART_Recv(), FD_ISSET failed!");
+        return -1;
+    }
+#endif
+
+    len = read(fd, data, datalen);
+	return len;
+}
+
+/**
+ * 将从串口读出的数据添加到接收缓区尾部，防止读取到不完整帧
+ *
+ * @param buf			串口读取数据
+ * @param len			读数据长度
+ * @param ptRBuf		接收缓区对象
+ * @return
+ */
+void attach2Tail(UInt8 *buf, UInt8 len, tRINGBUF *ptRBuf)
+{
+	UInt8 i = 0;
+
+	while((i < len) && (ptRBuf->read != ptRBuf->write))
+	{
+		ptRBuf->buf[ptRBuf->write] = buf[i];
+		ptRBuf->write ++;
+		if(ptRBuf->write >= BUF_SIZE)
+			ptRBuf->write = 0;
+		i++;
+	}
+}
+
+/*
+ * 计算校验和，抑或
+ */
+UInt8 CalChecksum(UInt8 *data, UInt8 u8Len)
+{
+	UInt8 i = 0;
+	UInt8 checksum = 0;
+
+	while(i < u8Len) {
+		checksum ^= data[i];
+		i++;
+	}
+
+	return checksum;
+}
+
+/**
+ * 提取命令帧
+ */
+int COMM_TakeFrame(tRINGBUF *ptRBuf, tMSG_CMD *ptCmd)
+{
+	UInt8 tmpCursor = 0;
+	UInt8 *paCmd = (UInt8 *)ptCmd;
+	UInt8 i = 0;
+	UInt8 checksum = 0;
+
+	///查找帧头
+	while(ptRBuf->read != ptRBuf->write) {
+		if(ptRBuf->buf[ptRBuf->read] == CMD_HEAD) {
+			break;
+		}
+
+		ptRBuf->read ++;
+		if(ptRBuf->read >= BUF_SIZE)
+			ptRBuf->read = 0;
+	}
+
+	if(ptRBuf->read == ptRBuf->write)	///空
+		return -1;
+
+	///检查缓区内是否有一帧，简单地进行帧长度比较
+	tmpCursor = ptRBuf->read + sizeof(tMSG_CMD);
+	if(tmpCursor >= BUF_SIZE)
+		tmpCursor = tmpCursor - BUF_SIZE;
+	if(tmpCursor >= ptRBuf->write)
+		return -1;
+
+	///有一帧
+	ptCmd->head = CMD_HEAD;
+	ptRBuf->read ++;
+	if(ptRBuf->read >= BUF_SIZE)
+		ptRBuf->read = 0;
+
+	i = 0;
+	while(ptRBuf->read != ptRBuf->write) {
+		paCmd[i++] = ptRBuf->buf[ptRBuf->read++];
+		if(ptRBuf->read >= BUF_SIZE)
+			ptRBuf->read = 0;
+	}
+
+	///帧内容检查
+	checksum = CalChecksum(paCmd, sizeof(tMSG_CMD) - 1);
+	if(ptCmd->checksum != checksum)
+		return -1;
+
 	return 0;
 }
 
+/**
+ * 创建串口通信A8端监听线程
+ */
+int COMM_CreateTask(void)
+{
+	int err = 0;
+	int ret;
 
-/*************************************************************************
- *  @func       main
- *  @brief      Entry point for the application.
- *  @param[in]  None
- *  @returns    None
- ************************************************************************/
-int main(void)
-{ 
-    int32_t nStatus = 0;
+	///接收队列读写位置初始化
+	tRBuf.read = 0;
+	tRBuf.write = 0;
 
-    /* DSP L1 and L2 cache configurations. */
-    L1PCFG |= 0x00000004u;   /* L1 program cache is configured to 32K */
-    L1DCFG |= 0x00000004u;   /* L1 data cache is configured to 32K */
+	///串口初始化
+	ret = UART_Init();
+	if(ret < 0)
+	{
+		printf("\n GZD, uart init failed!");
+		return ret;
+	}
 
-    //L2CFG  |= 0x00000004u;   /* L2 is configured to 256K. */
-    L2CFG  |= 0x00000003u;   //liuxu, 02/13/2014, L2 is configured to 128K, and leave the other 128KB to customer algo.
-
-#if 0
-    MAR64  |= 0x00000001u;     /* liuxu, 11/14/2013, cache for OCMC. 0x40000000 - 0x40FFFFFF is made cacheable */
-#else//liuxu, 02/14/2014, diable caching of OCRAM since it hasn't been used, RISK... 
-    MAR64  = 0x00000000u;     /* liuxu, 11/14/2013, cache for OCMC. 0x40000000 - 0x40FFFFFF is made cacheable */
-#endif
-    //MAR128 |= 0x00000001u;   /* 0x80000000 - 0x80FFFFFF is made cacheable */
-
-    //MAR133 |= 0x00000001u;   /* 0x85000000 - 0x85FFFFFF is made cacheable */
-    //MAR134 |= 0x00000001u;   /* 0x86000000 - 0x86FFFFFF is made cacheable */
-
-    //MAR135 |= 0x00000001u;   /* 0x87000000 - 0x87FFFFFF is made cacheable */
-
-    //MAR137 |= 0x00000001u;   /* 0x89000000 - 0x89FFFFFF is made cacheable */ //liuxu, 10/18/2013, disable cacheable of shared regions to avoid IPC issue.
-    //MAR138 |= 0x00000001u;   /* 0x8a000000 - 0x8aFFFFFF is made cacheable */
-    //MAR139 |= 0x00000001u;   /* 0x8b000000 - 0x8bFFFFFF is made cacheable */
-    //MAR140 |= 0x00000001u;   /* 0x8c000000 - 0x8cFFFFFF is made cacheable */
-    //MAR141 |= 0x00000001u;   /* 0x8d000000 - 0x8dFFFFFF is made cacheable */
-    //MAR142 |= 0x00000001u;   /* 0x8e000000 - 0x8eFFFFFF is made cacheable */
-    //MAR143 |= 0x00000001u;   /* 0x8f000000 - 0x8fFFFFFF is made cacheable */ //liuxu, 10/18/2013, till here.
-
-    //MAR144 |= 0x00000001u;   /* 0x90000000 - 0x90FFFFFF is made cacheable */
-
-    //liuxuliuxu, 8/20/2013, disable the cache for ARM. MAR155 |= 0x00000001u;   /* 0x9B000000 - 0x9BFFFFFF is made cacheable *///liuxuliuxu
-    //liuxuliuxu, 8/21/2013, currently i'm using 0x9FB00000 for non-cached shared region.
-
-    //liuxu, 10/22/2013, overwrite the default settings from packages maybe.
-    MAR137 = 0x00000000u;   /* 0x89000000 - 0x89FFFFFF is made un-cacheable */ 
-    MAR138 = 0x00000000u;   /* 0x8a000000 - 0x8aFFFFFF is made un-cacheable */
-    MAR139 = 0x00000000u;   /* 0x8b000000 - 0x8bFFFFFF is made un-cacheable */
-    MAR140 = 0x00000000u;   /* 0x8c000000 - 0x8cFFFFFF is made un-cacheable */
-    MAR141 = 0x00000000u;   /* 0x8d000000 - 0x8dFFFFFF is made un-cacheable */
-    MAR142 = 0x00000000u;   /* 0x8e000000 - 0x8eFFFFFF is made un-cacheable */
-    MAR143 = 0x00000000u;   /* 0x8f000000 - 0x8fFFFFFF is made un-cacheable */ 
-    MAR144 = 0x00000000u;   /* 0x90000000 - 0x90FFFFFF is made un-cacheable *///liuxu, 11/5/2013, for mem_size_128MB.
-
-    MAR128 = 0x00000000u;   /* 0x80000000 - 0x80FFFFFF is made un-cacheable */
-
-    //christian allow customer to use 0x85f00000-86c00000
-    MAR133 = 0x00000000u;   /* 0x85000000 - 0x85FFFFFF is made un-cacheable *///liuxu, 11/5/2013, for mem_size_128MB. Actually, all DSP code has been uncached, be careful of the performance and try to use L1/L2/OCMC as fixed code sections.
-    //liuxu, 11/14/2013, caching can improve performance dramatically.
-    //MAR134 = 0x00000000u;   /* 0x86000000 - 0x86FFFFFF is made un-cacheable *///liuxu, 10/23/2013, disable the cache of that, because messageQ use it for internal data structure and may impacts ipc.
-
-#if 0//liuxu, 05/08/2014, RISK...try to trigger the issue.....
-    MAR135 = 0x00000000u;   /* 0x87000000 - 0x87FFFFFF is made un-cacheable */
-#else
-    MAR135 |= 0x00000001u;   /* 0x87000000 - 0x87FFFFFF is made un-cacheable */
-#endif
-
-
-    //liuxu, 10/22/2013, 0184 827Ch MAR159 Memory Attribute Register 159 9F00 0000h - 9FFF FFFFh
-
-    MAR144 |= 0x00000001u;   /* 0x90000000 - 0x90FFFFFF is made cacheable *///liuxu, 01/22/2014, China port. cacheable.
-    MAR145 |= 0x00000001u;   /* 0x91000000 - 0x90FFFFFF is made cacheable */
-
-    MAR146 |= 0x00000001u;//liuxu, 01/22/2014, China port, 80MB, firstly.
-    MAR147 |= 0x00000001u;
-    MAR148 |= 0x00000001u;   
-    MAR149 |= 0x00000001u;   
-    MAR150 |= 0x00000001u;   
-
-    MAR143 |= 0x00000001u;   /* 0x8f000000 - 0x8fFFFFFF is made cacheable */ //liuxu, 02/13/2014. 
-
-#if 0//liuxu, 02/14/2014, uncache all frame buffers. 
-    MAR131 = 0x00000000u;   /* 0x83000000 - 0x83FFFFFF is made un-cacheable *///liuxu, 02/12/2014, frame buffers shouldn't be cached, should they??
-    MAR132 = 0x00000000u;   /* 0x84000000 - 0x84FFFFFF is made un-cacheable */
-    //MAR143 = 0x00000000u;   /* 0x8f000000 - 0x8fFFFFFF is made un-cacheable */ 
-#endif
-    
-    nStatus = Ipc_start();
-    if (nStatus < 0)
+	///创建读线程
+    err = pthread_create (&thread_id, NULL, COMM_Proc, NULL);
+    if (err != 0)
     {
-        System_abort("Ipc_start failed\n");
+        printf("\n\n\nGZD, can't create thread: %s\n", strerror(err));
+        while(1);
     }
 
-    BIOS_start();
+    printf("\n\n\nGZD, thread_id = %d\n", thread_id);
+
     return 0;
 }
+
+/**
+ * 串口通信处理程序，A8核程序从MCU接收串口消息，发送给DSP处理
+ */
+void COMM_Proc(void)
+{
+	int readBytes = 0;
+#define RECV_LEN 20
+	UInt8 rd_buf[RECV_LEN];
+	int ret;
+	tMSG_CMD tCmd;
+	int status;
+static UInt8 TX_buf[5];
+
+	TX_buf[0] = 0x31;
+	TX_buf[1] = 0x32;
+	TX_buf[2] = 0x33;
+	TX_buf[3] = 0x39;
+	TX_buf[4] = 0x38;
+
+	while(1)
+	{
+		printf("\ngzd, UART send data, [%x %x %x %x %x]... \n", TX_buf[0], TX_buf[1], TX_buf[2], TX_buf[3], TX_buf[4]);
+		ret = UART_Send(serial_fd, TX_buf, 5);
+		if(ret < 0)
+			printf("\n gzd, send error, err = %d\n", ret);
+		else
+			printf("\n gzd, send ok.\n");
+
+		readBytes = UART_Recv(serial_fd, rd_buf, RECV_LEN);
+		if(readBytes > 0) {
+			//回显接收到的数据
+			int i = 0;
+			printf("\n gzd, Get UART Msg: { ");
+			for(; i < readBytes; i++) {
+				printf(" %x ", rd_buf[i]);
+			}
+			printf(" } \n ");
+
+			attach2Tail(rd_buf, readBytes, &tRBuf);
+			ret = COMM_TakeFrame(&tRBuf, &tCmd);
+			if(ret > 0) {
+				printf("\n[UART] Get Msg, cmd = %x, param[0..3] = %x, %x, %x, %x\n",
+						tCmd.cmd, tCmd.param[0], tCmd.param[1], tCmd.param[2], tCmd.param[3]);
+
+
+				//将按键消息原封不动转发给DSP，A8不做任何判断，因为A8不知道当前的操作含义
+				cmdMsg->cmdType = (0x666 << 16 ) | tCmd.cmd;
+				cmdMsg->cmdParam[0] = tCmd.param[0];
+				cmdMsg->cmdParam[1] = tCmd.param[1];
+				cmdMsg->cmdParam[2] = tCmd.param[2];
+				cmdMsg->cmdParam[3] = tCmd.param[3];
+				status = commandQPut(RemoteDspQId, (MessageQ_Msg )cmdMsg); ///消息发送到DSP的消息队列
+				if (status < 0)
+				{
+					printf("\n gzd, commandQPut error, status=0x%x\n", status);
+				} else {
+					printf("\n cmd send ok to DSP.\n");
+				}
+			}
+		}
+		else {
+			printf("\nGZD, no msg from UART\n");
+		}
+		usleep(1000000);
+	}//while
+}
+#if 0
+				switch(tCmd.cmd)
+				{
+				case MSG_FRONT:		/*方向前*/
+				case MSG_FRONT_FULLVIEW:	/*方向前-全屏*/
+				case MSG_LEFT:			/*方向左*/
+				case MSG_LEFT_FULLVIEW:	/*方向左-全屏*/
+				case MSG_RIGHT:   		/*方向右*/
+				case MSG_RIGHT_FULLVIEW:	/*方向右-全屏*/
+				case MSG_REAR:			/*倒车*/
+				case MSG_ALLVIEW:		/*四路视频同时显示*/
+					cmdMsg->cmdType = (0x666 << 16 ) | tCmd.cmd;
+					cmdMsg->cmdParam[0] = tCmd.param[0];
+					cmdMsg->cmdParam[1] = tCmd.param[1];
+					cmdMsg->cmdParam[2] = tCmd.param[2];
+					cmdMsg->cmdParam[3] = tCmd.param[3];
+					status = commandQPut(RemoteDspQId, (MessageQ_Msg )cmdMsg); ///消息发送到DSP的消息队列
+					if (status < 0)
+					{
+						printf("\n gzd, commandQPut error, status=0x%x\n", status);
+					} else {
+						printf("\n cmd send ok to DSP.\n");
+					}
+					break;
+
+				case MSG_SNAPSHOT:	/*标定-截图*/
+					/*
+					 * 标定时，设备端需要做两个工作，一是从四路摄像头各拍一帧照片存储到SD卡；二是读取SD卡中的校正参数文件
+					 * DSP_Persmat.dat，通过共享内存映射到DSP。
+					 */
+					TakeSnapshot();
+					break;
+
+				case MSG_CALIBRATING: /*通知DSP开始标定*/
+
+					TakeCalibrating();
+					break;
+
+				case MSG_SLEEP:			/*休眠*/
+
+					break;
+				}
+#endif
+
+#endif //A8_MCU_COMM_UART
+
+/**
+ * 摄像头截图并存储到SD卡，供校正用
+ *
+ * @return 0=成功，-1=失败
+ */
+int TakeSnapshot(void)
+{
+	ProcMgr_Handle   handle = NULL;
+	unsigned char *hardFrameOutput0;
+	unsigned char *hardFrameOutput1;
+	unsigned char *hardFrameOutput2;
+	unsigned char *hardFrameOutput3;//liuxu, 02/20/2014, 0x8ff00000.
+
+	unsigned char *phyAddrToBeChecked;//liuxu, 02/20/2014, 0x8ff00000.
+
+	FILE * dumpfile0;
+	FILE * dumpfile1;
+	FILE * dumpfile2;
+	FILE * dumpfile3;
+
+	int status;
+
+	status = ProcMgr_open (&handle, 0);
+	printf("\nliuxu, ProcMgr_open successful, handle=0x%x\n", handle);
+	if (status < 0)
+	{
+		printf("\nliuxu, ProcMgr_open error, status=0x%x\n", status);
+		return -1;
+	}
+
+#define NV12_FRAMESIZE 529920//(736*480*1.5)
+	ProcMgr_translateAddr (handle,
+				   &hardFrameOutput0,
+				   ProcMgr_AddrType_MasterUsrVirt,
+				   (void *)M3_FRAMEBUFFER_PA_0,
+				   ProcMgr_AddrType_SlaveVirt);
+
+	ProcMgr_translateAddr (handle,
+				   &hardFrameOutput1,
+				   ProcMgr_AddrType_MasterUsrVirt,
+				   (void *)(M3_FRAMEBUFFER_PA_0 + NV12_FRAMESIZE),
+				   ProcMgr_AddrType_SlaveVirt);
+
+	ProcMgr_translateAddr (handle,
+				   &hardFrameOutput2,
+				   ProcMgr_AddrType_MasterUsrVirt,
+				   (void *)(M3_FRAMEBUFFER_PA_0 + NV12_FRAMESIZE*2),
+				   ProcMgr_AddrType_SlaveVirt);
+
+	ProcMgr_translateAddr (handle,
+				   &hardFrameOutput3,
+				   ProcMgr_AddrType_MasterUsrVirt,
+				   (void *)(M3_FRAMEBUFFER_PA_0 + NV12_FRAMESIZE*3),
+				   ProcMgr_AddrType_SlaveVirt);
+
+	printf("\ngzd, snapshot, virtual addr of hardFrameOutput0 = 0x%x\n", hardFrameOutput0);
+	printf("\ngzd, snapshot, virtual addr of hardFrameOutput1 = 0x%x\n", hardFrameOutput1);
+	printf("\ngzd, snapshot, virtual addr of hardFrameOutput2 = 0x%x\n", hardFrameOutput2);
+	printf("\ngzd, snapshot, virtual addr of hardFrameOutput3 = 0x%x\n", hardFrameOutput3);
+
+	ProcMgr_translateAddr (handle,
+				   &phyAddrToBeChecked,
+				   ProcMgr_AddrType_MasterPhys,
+				   (void *)(0xd5604800),
+				   ProcMgr_AddrType_MasterKnlVirt);
+
+	printf("\ngzd, 2, phy addr of phyAddrToBeChecked = 0x%x\n", phyAddrToBeChecked);//liuxu, 05/08/2014, leverage procMgr to sniff phy addr of entry->flag, which in SR0.
+
+	dumpfile0 = fopen("/media/mmcblk0p1/TI_top.yuv", "w");
+	//+ a0220402, R1.1 add protection for the case of the absence of SD card
+	if( dumpfile0 == NULL ) {
+		printf ("dumpfile0 fopen failed! SD card is needed for snopshot for developing!\n");
+		return -1;
+	}
+
+	dumpfile1 = fopen("/media/mmcblk0p1/TI_right.yuv", "w");
+	if( dumpfile1 == NULL ) {
+		printf ("dumpfile1 fopen failed! SD card is needed for snopshot for developing!\n");
+		return -1;
+	}
+
+	dumpfile2 = fopen("/media/mmcblk0p1/TI_left.yuv", "w");
+	if( dumpfile1 == NULL ) {
+		printf ("dumpfile2 fopen failed! SD card is needed for snopshot for developing!\n");
+		return -1;
+	}
+
+	dumpfile3 = fopen("/media/mmcblk0p1/TI_back.yuv", "w");
+	if( dumpfile1 == NULL ) {
+		printf ("dumpfile3 fopen failed! SD card is needed for snopshot for developing!\n");
+		return -1;
+	}
+
+//	time1_profile = IviGetTime();
+
+	fwrite(hardFrameOutput0, 1, 736*480*1.5, dumpfile0);
+	fwrite(hardFrameOutput1, 1, 736*480*1.5, dumpfile1);
+	fwrite(hardFrameOutput2, 1, 736*480*1.5, dumpfile2);
+	fwrite(hardFrameOutput3, 1, 736*480*1.5, dumpfile3);
+
+//	time2_profile = IviGetTime() - time1_profile;
+//	printf("\nliuxu, time per dump 4 files = %d ms!!\n\n\n", time2_profile);
+	printf("\n\nliuxu, 222,02/20/2014, dump 4 files well.\n\n");
+
+	fclose(dumpfile0);
+	fclose(dumpfile1);
+	fclose(dumpfile2);
+	fclose(dumpfile3);
+
+	system("sync"); ///刷新存储区迫使缓冲块数据立即写盘并更新超级块，其中包含已修改的 i-node、已延迟的块 I/O 和读写映射文件
+
+	return 0;
+}
+
+/**
+ * 执行标定过程。将DSP_Permit.dat通过共享内存映射送给DSP
+ *
+ * @return 0=成功，-1=失败
+ */
+int TakeCalibrating(void)
+{
+#ifdef SAVE_PERSMAT_TO_FS
+
+	unsigned char *coreObjVirtBaseAddr2;
+	unsigned int memDevFd2;
+	FILE * dumpfilePersmat_ForLoad;
+
+	memDevFd2 = open("/dev/mem",O_RDWR|O_SYNC);
+	if(memDevFd2 < 0)
+	{
+		printf("\nliuxu, 04/24/2014, ERROR: /dev/mem open failed for load!!!\n");
+		return -1;
+	}
+
+	coreObjVirtBaseAddr2 = mmap(
+			(void	*)0x80000000,
+			0x1000,
+			PROT_READ|PROT_WRITE|PROT_EXEC,
+			MAP_SHARED,
+			memDevFd2,
+			0x80000000
+			);
+
+	if (coreObjVirtBaseAddr2 == NULL)
+	{
+		printf("\nliuxu, 04/24/2014, ERROR: mmap() failed for load!!!\n");
+		return -1;
+	}
+
+	printf("\nreading DSP_Persmat.dat ... ");
+
+	*((unsigned int *)coreObjVirtBaseAddr2) = 0xFFFFFFFF;//liuxu, 04/24/2014, clear to tag in case no exsiting persmat.dat, so that the DSP use the one built in code.
+
+	dumpfilePersmat_ForLoad = fopen("/media/mmcblk0p1/DSP_Persmat.dat", "r");//liuxu, 04/24/2014, just failed if no exsiting.
+	if(dumpfilePersmat_ForLoad == NULL)
+	{
+		printf("\nliuxu, 04/24/2014, /media/mmcblk0p1/DSP_Persmat.dat doesn't exist\n");
+		return -1;
+	}
+
+	int i_readPersmatcount = fread (coreObjVirtBaseAddr2, 1, 4*9*4, dumpfilePersmat_ForLoad);
+	printf("\nfinished, i_readPersmatcount=%d bytes\n", i_readPersmatcount);
+	fclose(dumpfilePersmat_ForLoad);
+	close(memDevFd2);
+
+	printf("\nSet calabration flag OK.");
+	///设置Persmat参数载入标志，通知DSP读取
+	*((unsigned int *)(coreObjVirtBaseAddr2 + 0x888)) = 0x88888888;
+//        i_saveFirstTime = 0;//liuxu, 06/03/2014, ready for fwrite/saving permat during next frame.
+
+	return 0;
+#endif //SAVE_PERSMAT_TO_FS
+}
+
+#endif ///NEW_MAIN
 
