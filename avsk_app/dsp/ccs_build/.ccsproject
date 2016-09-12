@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<?ccsproject version="1.0"?>
+<projectOptions>
+	<deviceVariant value="com.ti.ccstudio.deviceModel.C6000.GenericC674xDevice"/>
+	<deviceEndianness value="little"/>
+	<codegenToolVersion value="7.2.3"/>
+	<isElfFormat value="true"/>
+	<connection value=""/>
+	<rts value="rts6740e_elf.lib"/>
+	<templateProperties value="id=org.eclipse.rtsc.project.templates.EmptyRtscApplication,buildProfile=release,isHybrid=true,"/>
+	<deviceFamily value="C6000"/>
+	<isTargetManual value="false"/>
+</projectOptions>

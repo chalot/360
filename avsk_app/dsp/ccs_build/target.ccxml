@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<configurations XML_version="1.2" id="configurations_0">
+    <configuration XML_version="1.2" id="Texas Instruments XDS100v2 USB Debug Probe_0">
+        <instance XML_version="1.2" desc="Texas Instruments XDS100v2 USB Debug Probe_0" href="connections/TIXDS100v2_Connection.xml" id="Texas Instruments XDS100v2 USB Debug Probe_0" xml="TIXDS100v2_Connection.xml" xmlpath="connections"/>
+        <connection XML_version="1.2" id="Texas Instruments XDS100v2 USB Debug Probe_0">
+            <instance XML_version="1.2" href="drivers/tixds100v2c674x.xml" id="drivers" xml="tixds100v2c674x.xml" xmlpath="drivers"/>
+            <instance XML_version="1.2" href="drivers/tixds100v2cortexA.xml" id="drivers" xml="tixds100v2cortexA.xml" xmlpath="drivers"/>
+            <instance XML_version="1.2" href="drivers/tixds100v2cortexM.xml" id="drivers" xml="tixds100v2cortexM.xml" xmlpath="drivers"/>
+            <property Type="choicelist" Value="3" id="The JTAG TCLK Frequency (MHz)"/>
+        <platform XML_version="1.2" id="platform_0">
+                <instance XML_version="1.2" desc="C674X_0" href="cpus/c674x.xml" id="C674X_0" xml="c674x.xml" xmlpath="cpus"/>
+                <instance XML_version="1.2" desc="Cortex_A8_0" href="cpus/cortex_a8.xml" id="Cortex_A8_0" xml="cortex_a8.xml" xmlpath="cpus"/>
+                <instance XML_version="1.2" desc="Cortex_M3_0" href="cpus/cortex_m3.xml" id="Cortex_M3_0" xml="cortex_m3.xml" xmlpath="cpus"/>
+                <cpu HW_revision="1.0" XML_version="1.2" description="C674x+ GEM+FP CPU" id="C674X_0" isa="TMS320C674X">
+                    <property Type="filepathfield" Value="..\..\..\..\..\..\..\..\J5eco_SRV_SDK_Release_Installation\J5eco_DSP_Project_GA-R1.1\TI811x_evm_A8_ddr3.gel" id="GEL File"/>
+                </cpu>
+            </platform>
+        </connection>
+    </configuration>
+</configurations>

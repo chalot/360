@@ -1,0 +1,30 @@
+/*
+ *  ======== demos/avsk_app/package.bld ========
+ */
+
+/* explicit references to global objects */
+var Build = xdc.useModule('xdc.bld.BuildEnvironment');
+var Pkg = xdc.useModule('xdc.bld.PackageContents');
+
+/* use common package build support */
+var BuildHelp = xdc.useModule('ti.sdo.tools.build.PackageBuildHelp');
+
+/* clean bin folder */
+Pkg.generatedFiles.$add("bin/");
+
+/* add custom files to all releases */
+Pkg.attrs.exportCfg = false;
+Pkg.attrs.exportDoc = true;
+Pkg.attrs.exportSrc = false;
+Pkg.attrs.exportExe = false;
+Pkg.attrs.exportAll = true;
+Pkg.otherFiles = [
+    "package.bld",
+];
+
+/* these files will be included in all releases */
+Pkg.otherFiles = [
+    "package.bld",
+    "package.xdc",
+    "bin"
+];

@@ -1,0 +1,52 @@
+/*
+ *  ======== config.bld ========
+ *  Sample Build configuration script
+ */
+
+/* load the required modules for the configuration */
+
+xdc.loadCapsule("platform.xs");
+
+var buildReleaseConfig = true;
+
+var Build         = xdc.useModule('xdc.bld.BuildEnvironment');
+
+var C674_ELF = xdc.useModule('ti.targets.elf.C674');
+
+C674_ELF.rootDir = java.lang.System.getenv("CODEGEN_PATH_DSP");
+
+C674_ELF.ccOpts.suffix += " -DPLATFORM_EVM_SI ";
+
+C674_ELF.ccOpts.suffix += " -mi10 -mo --gcc --symdebug:none -O3";
+
+/* linker options */
+
+C674_ELF.lnkOpts.suffix += " --zero_init=off ";
+C674_ELF.lnkOpts.suffix += " --dynamic --retain=_Ipc_ResetVector";
+
+C674_ELF.platforms = ["ti.platforms.generic:C674_DSP"];
+
+C674_ELF.platform = C674_ELF.platforms[0];
+
+/* list interested targets in Build.targets array  */
+Build.targets = [
+                    C674_ELF,
+                ];
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

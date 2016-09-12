@@ -1,0 +1,45 @@
+/*
+ *  ======== config_m3.bld ========
+ */
+
+xdc.loadCapsule("platform.xs");
+
+var buildReleaseConfig = true;
+
+var Build         = xdc.useModule('xdc.bld.BuildEnvironment');
+var M3            = xdc.useModule('ti.targets.arm.elf.M3');
+
+M3.rootDir        = java.lang.System.getenv("TMS470CGTOOLPATH");
+
+M3.ccOpts.suffix  += " --symdebug:none -ms --gcc -O3 -D___DSPBIOS___ -D___DUCATI_FW___ -DPLATFORM_EVM_SI -DTI_8149_BUILD -DVPS_TRACE_ENABLE -DVPS_ASSERT_ENABLE ";
+M3.ccOpts.suffix  += " -DCHIP_DM8148 -DTI814x_M3 ";
+
+//if (maxResolution == "hd") {
+//  M3.ccOpts.suffix += " -DMAX_RESOLUTION_HD ";
+//}
+
+M3.lnkOpts.suffix += " --zero_init=off -x --dynamic --retain=_Ipc_ResetVector ";
+
+//set default platform and list of all interested platforms for M3
+M3.platforms = ["ti.platforms.generic:DucatiPlatform_Core0",
+                "ti.platforms.generic:DucatiPlatform_Core1"];
+
+M3.platform = M3.platforms[0];
+
+Build.targets     = [
+                    M3,                                  
+                    ];
+
+var Pkg = xdc.module("xdc.bld.PackageContents");
+Pkg.attrs.archiver = "zip";     /* package archive format is .zip */
+
+/*
+ *  ======== Pkg.libTemplate ========
+ *  Set default library version template to be used by all packages
+ */
+Pkg.libTemplate = "ti/sdo/ce/utils/libvers.xdt";
+
+
+Pkg.attrs.profile = "debug";     /* default build profile is "debug" */
+
+                

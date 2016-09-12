@@ -1,0 +1,6 @@
+/* THIS IS A GENERATED FILE -- DO NOT EDIT */
+/* configuro was passed the target's name explicitly */
+var target  = xdc.module('ti.targets.elf.C674');
+Build.targets = [target];
+/* configuro was passed the target's rootDir explicitly */
+Build.targets[0].rootDir = 'I:/J5eco_DSP_Project_GA-R1.1_20141120/J5eco_DSP_Project_R1.1/av_bios_sdk_00_10_00_00/avsdk_00_10_00_00/tools/c6000_7_4_1';

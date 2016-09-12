@@ -1,0 +1,40 @@
+/*
+ *  ======== config_a8.bld ========
+ */
+
+xdc.loadCapsule("platform.xs");
+
+var buildReleaseConfig = true;
+
+var Build         = xdc.useModule('xdc.bld.BuildEnvironment');
+var A8            = xdc.useModule('ti.targets.arm.elf.A8F');
+
+A8.rootDir        = java.lang.System.getenv("TMS470CGTOOLPATH");
+
+A8.ccOpts.suffix += " --symdebug:none -ms --gcc -O3 -D___DSPBIOS___ -DPLATFORM_EVM_SI -DARM_TARGET -DOS_DSPBIOS ";
+A8.ccOpts.suffix += " -DCHIP_DM8148 ";
+
+//if (maxResolution == "hd") {
+//  A8.ccOpts.suffix += " -DMAX_RESOLUTION_HD ";
+//}
+
+A8.lnkOpts.suffix += " --zero_init=on -x --dynamic --retain=_Ipc_ResetVector ";
+
+A8.platforms = ["ti.platforms.generic:Cortex_A8"];
+A8.platform = A8.platforms[0];
+
+Build.targets     = [
+					A8,
+                    ];
+
+var Pkg = xdc.module("xdc.bld.PackageContents");
+Pkg.attrs.archiver = "zip";     /* package archive format is .zip */
+
+/*
+ *  ======== Pkg.libTemplate ========
+ *  Set default library version template to be used by all packages
+ */
+Pkg.libTemplate = "ti/sdo/ce/utils/libvers.xdt";
+
+
+Pkg.attrs.profile = "debug";     /* default build profile is "debug" */

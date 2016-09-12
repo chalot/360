@@ -1,0 +1,14 @@
+Resource
+	Linked Resources
+		Path Variables
+			ROOT_DIR -> your root dir of the bios sdk
+			SYSLINK_ROOT -> your syslink root folder of J5eco ezsdk
+			
+
+
+
+CCS Build	Variables	ROOT_DIR -> your root dir of the bios sdk	
+				SYSLINK_ROOT -> your syslink root folder of J5eco ezsdk
+				
+
+
